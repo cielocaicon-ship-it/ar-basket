@@ -95,7 +95,7 @@ input{flex:1;min-width:0;padding:14px;border-radius:12px;border:2px solid rgba(2
 </div>
 <div id="msg" class="hidden"></div>
 <div id="toast"></div>
-<div id="hint" class="hidden">⬆️ Desliza hacia arriba para lanzar · 🔄 gira el celular para ver en 360° <small style="opacity:.6">· v10</small></div>
+<div id="hint" class="hidden">⬆️ Desliza hacia arriba para lanzar · 🔄 gira: hay un aro a cada lado <small style="opacity:.6">· v11</small></div>
 <div id="touch" class="hidden"></div>
 <div id="steps" class="hidden">📡 Preparando…</div>
 
@@ -126,7 +126,8 @@ const CFG = {
   SUBSTEPS: 4,                    // subpasos de física por frame
   STEP_LEN: 0.65,                 // metros que avanzas por cada paso real detectado
   STEP_THRESHOLD: 1.3,            // sensibilidad del detector de pasos (más alto = menos sensible)
-  BOUNDS: { x: 4.6, zMin: -1.6, zMax: 8.2 }, // bordes de la cancha (unidades)
+  MID: 5.5,                       // mitad de la cancha (línea central)
+  BOUNDS: { x: 4.6, zMin: -1.6, zMax: 12.6 }, // bordes de la cancha completa (unidades)
   SLAM_MAX_SPEED: 1.8,            // velocidad máxima al caminar (m/s): evita saltos
   SLAM_DEADZONE: 0.003,           // movimientos más pequeños se ignoran (temblor de la mano)
   POLE_CLEAR: 0.75,               // distancia mínima al poste (unidades) para no quedar encima
@@ -144,6 +145,11 @@ const CFG = {
 
 const $ = id => document.getElementById(id);
 const RIM_V = new THREE.Vector3(CFG.RIM.x, CFG.RIM.y, CFG.RIM.z);
+// Dos aros: el 0 es el de adelante y el 1 es su espejo al otro lado de la cancha
+const RIMS = [RIM_V, new THREE.Vector3(-CFG.RIM.x, CFG.RIM.y, 2 * CFG.MID - CFG.RIM.z)];
+let nets = [], aimHoop = 0;
+// Convierte un punto o velocidad al sistema del aro 0 (espejo para el aro 1)
+function mirror(i, v, isVel) { if (i === 1) { v.x = -v.x; v.z = isVel ? -v.z : 2 * CFG.MID - v.z; } return v; }
 
 /* ===================== ESTADO ===================== */
 const S = {
@@ -379,9 +385,10 @@ function buildAvatar(color) {
 
 function buildCourt() {
   const grp = new THREE.Group();
+  const half = new THREE.Group(); grp.add(half);
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(5, 6.5),
     new THREE.MeshStandardMaterial({ map: halfCourtTexture(), roughness: 0.55, metalness: 0.0 }));
-  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0.004, 2.25); floor.receiveShadow = true; grp.add(floor);
+  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0.004, 2.25); floor.receiveShadow = true; half.add(floor);
   const Bd = CFG.BOUNDS, ow = Bd.x * 2 + 0.8, od = Bd.zMax - Bd.zMin + 0.8;
   const outer = new THREE.Mesh(new THREE.PlaneGeometry(ow, od),
     new THREE.MeshStandardMaterial({ map: apronTexture(), roughness: 0.5, transparent: true }));
@@ -393,32 +400,32 @@ function buildCourt() {
   const bd = CFG.BOARD;
   const poleZ = bd.z - 0.45;
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, bd.y + 0.2, 16), metal);
-  pole.position.set(0, (bd.y + 0.2) / 2, poleZ); grp.add(pole);
+  pole.position.set(0, (bd.y + 0.2) / 2, poleZ); half.add(pole);
   const poleWrap = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 1.1, 16), pad);
-  poleWrap.position.set(0, 0.55, poleZ); grp.add(poleWrap);
+  poleWrap.position.set(0, 0.55, poleZ); half.add(poleWrap);
   const base = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.18, 0.7), pad);
-  base.position.set(0, 0.09, poleZ - 0.1); grp.add(base);
+  base.position.set(0, 0.09, poleZ - 0.1); half.add(base);
   const arm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.42), metal);
-  arm.position.set(0, bd.y, (poleZ + bd.z) / 2); grp.add(arm);
+  arm.position.set(0, bd.y, (poleZ + bd.z) / 2); half.add(arm);
   const brace = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.55), metal);
-  brace.position.set(0, bd.y - 0.25, (poleZ + bd.z) / 2); brace.rotation.x = -0.55; grp.add(brace);
+  brace.position.set(0, bd.y - 0.25, (poleZ + bd.z) / 2); brace.rotation.x = -0.55; half.add(brace);
 
   const glass = new THREE.MeshStandardMaterial({ color: 0xdcecff, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.32, depthWrite: false });
   const board = new THREE.Mesh(new THREE.BoxGeometry(bd.w, bd.h, bd.d), glass);
-  board.position.set(bd.x, bd.y, bd.z); board.renderOrder = 2; grp.add(board);
+  board.position.set(bd.x, bd.y, bd.z); board.renderOrder = 2; half.add(board);
   const lines = new THREE.Mesh(new THREE.PlaneGeometry(bd.w, bd.h),
     new THREE.MeshStandardMaterial({ map: boardTexture(), transparent: true, roughness: 0.3, depthWrite: false }));
-  lines.position.set(bd.x, bd.y, bd.z + bd.d / 2 + 0.006); lines.renderOrder = 3; grp.add(lines);
+  lines.position.set(bd.x, bd.y, bd.z + bd.d / 2 + 0.006); lines.renderOrder = 3; half.add(lines);
   [[0, bd.h / 2 + 0.02, bd.w + 0.06, 0.04], [0, -bd.h / 2 - 0.02, bd.w + 0.06, 0.04], [-bd.w / 2 - 0.02, 0, 0.04, bd.h + 0.08], [bd.w / 2 + 0.02, 0, 0.04, bd.h + 0.08]]
-    .forEach(([x, y, w, h]) => { const f = new THREE.Mesh(new THREE.BoxGeometry(w, h, bd.d + 0.02), metal); f.position.set(bd.x + x, bd.y + y, bd.z); grp.add(f); });
+    .forEach(([x, y, w, h]) => { const f = new THREE.Mesh(new THREE.BoxGeometry(w, h, bd.d + 0.02), metal); f.position.set(bd.x + x, bd.y + y, bd.z); half.add(f); });
 
   const rimMat = new THREE.MeshStandardMaterial({ color: 0xff4a10, metalness: 0.5, roughness: 0.3 });
   const rim = new THREE.Mesh(new THREE.TorusGeometry(CFG.RIM_R, CFG.RIM_TUBE, 10, 48), rimMat);
-  rim.rotation.x = Math.PI / 2; rim.position.copy(RIM_V); grp.add(rim);
+  rim.rotation.x = Math.PI / 2; rim.position.copy(RIM_V); half.add(rim);
   const front = bd.z + bd.d / 2, back = CFG.RIM.z - CFG.RIM_R;
   const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.03, Math.max(0.02, back - front)), rimMat);
-  bracket.position.set(0, CFG.RIM.y, (front + back) / 2); grp.add(bracket);
-  shadowAll(grp); floor.castShadow = false; outer.castShadow = false; board.castShadow = false; lines.castShadow = false;
+  bracket.position.set(0, CFG.RIM.y, (front + back) / 2); half.add(bracket);
+  shadowAll(half); floor.castShadow = false; outer.castShadow = false; board.castShadow = false; lines.castShadow = false;
 
   // Red
   const pts = [], N = 16, top = CFG.RIM_R, mid = CFG.RIM_R * 0.8, bot = CFG.RIM_R * 0.57, H1 = -0.2, H2 = -0.4;
@@ -432,15 +439,18 @@ function buildCourt() {
   const ng = new THREE.BufferGeometry();
   ng.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
   net = new THREE.LineSegments(ng, new THREE.LineBasicMaterial({ color: 0xf4f4f4 }));
-  net.position.copy(RIM_V); grp.add(net);
+  net.position.copy(RIM_V); half.add(net);
+  // Segunda mitad: el otro aro al frente
+  const half2 = half.clone(); half2.rotation.y = Math.PI; half2.position.z = 2 * CFG.MID; grp.add(half2);
+  nets = [net, half2.children.find(o => o.isLineSegments)];
 
   // Luz del sol con sombras reales
   const sun = new THREE.DirectionalLight(0xfff2dd, 1.1);
-  sun.position.set(2.5, 7, 4);
-  sun.target.position.set(0, 0, 1.2);
+  sun.position.set(2.5, 8, CFG.MID + 3);
+  sun.target.position.set(0, 0, CFG.MID);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048); sun.shadow.radius = 4;
-  const sc = sun.shadow.camera; sc.left = -7; sc.right = 7; sc.top = 7; sc.bottom = -7; sc.near = 0.5; sc.far = 30;
+  const sc = sun.shadow.camera; sc.left = -13; sc.right = 13; sc.top = 13; sc.bottom = -13; sc.near = 0.5; sc.far = 40;
   sun.shadow.bias = -0.0008;
   grp.add(sun); grp.add(sun.target);
   return grp;
@@ -764,11 +774,18 @@ function stepBall(h) {
   B.prev.copy(p);
   v.y -= CFG.G * h;
   p.addScaledVector(v, h);
-
+  const hi = p.z < CFG.MID ? 0 : 1;
+  mirror(hi, p, false); mirror(hi, v, true); mirror(hi, B.prev, false);
+  hoopCollide(p, v, r, h, hi);
+  mirror(hi, p, false); mirror(hi, v, true); mirror(hi, B.prev, false);
+  worldCollide(p, v, r);
+}
+// Colisiones con un aro (siempre en el sistema del aro 0)
+function hoopCollide(p, v, r, h, hi) {
   // 1) Canasta: cruza el plano del aro hacia abajo dentro del círculo
   const dxr = p.x - RIM_V.x, dzr = p.z - RIM_V.z, horiz = Math.hypot(dxr, dzr);
   if (!B.scored && B.prev.y >= RIM_V.y && p.y < RIM_V.y && v.y < 0 && horiz < CFG.RIM_R - r * 0.4) {
-    B.scored = true; onScore();
+    B.scored = true; onScore(hi);
   }
 
   // 2) Red: frena el balón y lo centra
@@ -813,6 +830,8 @@ function stepBall(h) {
     const vn = v.x * ux + v.z * uz;
     if (vn < 0) { v.x -= 1.5 * vn * ux; v.z -= 1.5 * vn * uz; playSnd(AudioFX.board); }
   }
+}
+function worldCollide(p, v, r) {
 
   // 6) Bordes de la cancha: el balón rebota y no se sale
   const Bd = CFG.BOUNDS;
@@ -832,12 +851,12 @@ function stepBall(h) {
   }
 }
 
-function onScore() {
+function onScore(hi) {
   const pts = B.startDist > CFG.THREE_PT_DIST ? 3 : 2;
   S.score += pts;
   toast(pts === 3 ? '¡TRIPLE! +3' : '¡CANASTA! +2');
   AudioFX.swish(); AudioFX.score(false);
-  netAnim = 1; updateHUD();
+  netAnim = 1; S.netIdx = hi || 0; updateHUD();
 }
 
 function resetBall() {
@@ -851,8 +870,17 @@ function heldStartLocal() {
   return court.worldToLocal(tmpW.clone());
 }
 // ¿El aro está a la vista de la cámara? Devuelve -1 izquierda, 1 derecha, 0 visible
+// Elige el aro hacia el que mira el celular
+function pickHoop() {
+  scene.updateMatrixWorld(true);
+  const cp = camera.getWorldPosition(new THREE.Vector3());
+  const fw = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()));
+  let best = 0, bd = -2;
+  RIMS.forEach((r, i) => { const d = court.localToWorld(r.clone()).sub(cp).normalize().dot(fw); if (d > bd) { bd = d; best = i; } });
+  return best;
+}
 function rimSide() {
-  const w = court.localToWorld(RIM_V.clone());
+  const w = court.localToWorld(RIMS[aimHoop].clone());
   const c = camera.worldToLocal(w.clone());
   if (c.z > -0.1) return c.x >= 0 ? 1 : -1;
   const p = w.project(camera);
@@ -863,7 +891,7 @@ function rimSide() {
 }
 // Calcula la velocidad de salida y qué tan bueno es el tiro (err 0 = perfecto)
 function calcVelocity(start, speed, lat) {
-  const D = RIM_V.clone().sub(start);
+  const D = RIMS[aimHoop].clone().sub(start);
   const horiz = Math.hypot(D.x, D.z);
   const T = THREE.MathUtils.clamp(0.75 + horiz * 0.1, 0.75, 1.6);
   const v = new THREE.Vector3(D.x / T, (D.y + 0.5 * CFG.G * T * T) / T, D.z / T);
@@ -879,6 +907,7 @@ function calcVelocity(start, speed, lat) {
 }
 function throwBall(speed, lat) {
   if (B.state !== 'held') return;
+  aimHoop = pickHoop();
   const start = heldStartLocal();
   const r = calcVelocity(start, speed, lat);
   B.pos.copy(start); B.vel.copy(r.v);
@@ -898,6 +927,8 @@ function currentSwipe() {
 }
 // Guía de tiro: puntos de la trayectoria y anillo en el aro
 function updateAim(t) {
+  if (B.state === 'held') aimHoop = pickHoop();
+  aimRing.position.copy(RIMS[aimHoop]);
   const show = B.state === 'held';
   aimRing.visible = B.state === 'held';
   aimRing.scale.setScalar(1 + Math.sin(t * 6) * 0.08);
@@ -1095,7 +1126,7 @@ function update(dt) {
   }
 
   // Animación de la red
-  if (netAnim > 0) { netAnim = Math.max(0, netAnim - dt * 2.5); net.scale.set(1 - netAnim * 0.15, 1 + Math.sin(netAnim * Math.PI) * 0.45, 1 - netAnim * 0.15); }
+  if (netAnim > 0) { netAnim = Math.max(0, netAnim - dt * 2.5); nets[S.netIdx || 0].scale.set(1 - netAnim * 0.15, 1 + Math.sin(netAnim * Math.PI) * 0.45, 1 - netAnim * 0.15); }
 
   // Rival
   const R = S.remote;
@@ -1119,9 +1150,7 @@ function update(dt) {
   // Mensajes de estado
   if (performance.now() < S.msgUntil) return;
   const side = rimSide();
-  if (side === -1) showMsg('⬅️ Gira el celular a la izquierda para ver el aro');
-  else if (side === 1) showMsg('➡️ Gira el celular a la derecha para ver el aro');
-  else if (side === 2) showMsg('↕️ Sube o baja el celular para ver el aro');
+  if (side === -1 && false) showMsg('');
   else hideMsg();
 }
 
