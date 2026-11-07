@@ -14,7 +14,7 @@
 html{background:#000}
 body{width:100%;height:100%;overflow:hidden;background:transparent;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#fff;user-select:none;-webkit-user-select:none}
 html{height:100%;overflow:hidden}
-video{z-index:-2!important}
+video{z-index:0!important}
 #gl{position:absolute;top:0;left:0;z-index:1}
 #touch{position:fixed;inset:0;z-index:5;touch-action:none}
 .screen{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;background:radial-gradient(circle at 50% 18%,#ff7a1a 0,#7a2a00 45%,#120700 100%);text-align:center;overflow-y:auto}
@@ -95,7 +95,7 @@ a{color:#ffe08a}
 </div>
 <div id="msg" class="hidden"></div>
 <div id="toast"></div>
-<div id="hint" class="hidden">⬆️ Desliza hacia arriba para lanzar · ↔️ mueve la mano</div>
+<div id="hint" class="hidden">⬆️ Desliza hacia arriba para lanzar · ↔️ mueve la mano <small style="opacity:.6">· v3</small></div>
 <div id="touch" class="hidden"></div>
 
 <script>
@@ -367,7 +367,7 @@ function init3D() {
 function initAR() {
   if (typeof THREEx === 'undefined') { camError = true; showMsg('No se pudo cargar AR.js. Revisa tu conexión a internet y recarga.'); return; }
   arSource = new THREEx.ArToolkitSource({ sourceType: 'webcam' });
-  arSource.init(() => { onResize(); setTimeout(onResize, 500); setTimeout(onResize, 1500); },
+  arSource.init(() => { fixVideo(); onResize(); setTimeout(onResize, 500); setTimeout(onResize, 1500); },
     () => { camError = true; showMsg('No se pudo abrir la cámara. Acepta el permiso y verifica que la página esté en HTTPS (GitHub Pages).'); });
 
   arCtx = new THREEx.ArToolkitContext({ cameraParametersUrl: CFG.DATA + 'camera_para.dat', detectionMode: 'mono', maxDetectionRate: 60 });
@@ -384,6 +384,14 @@ function initAR() {
   window.addEventListener('resize', () => { onResize(); setTimeout(onResize, 300); });
 }
 
+function fixVideo() {
+  const v = arSource && arSource.domElement;
+  if (!v) return;
+  v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', '');
+  v.muted = true; v.autoplay = true;
+  v.style.position = 'absolute'; v.style.zIndex = '0'; v.style.display = 'block';
+  if (v.paused) { const p = v.play(); if (p && p.catch) p.catch(() => {}); }
+}
 function onResize() {
   if (!arSource || !arSource.ready) return;
   arSource.onResizeElement();
@@ -510,7 +518,7 @@ function ndcX(e) {
 function bindTouch() {
   const el = $('touch');
   el.addEventListener('pointerdown', e => {
-    e.preventDefault(); AudioFX.init();
+    e.preventDefault(); AudioFX.init(); fixVideo();
     input.down = true;
     input.samples = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
     input.targetX = ndcX(e);
