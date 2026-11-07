@@ -95,7 +95,7 @@ input{flex:1;min-width:0;padding:14px;border-radius:12px;border:2px solid rgba(2
 </div>
 <div id="msg" class="hidden"></div>
 <div id="toast"></div>
-<div id="hint" class="hidden">⬆️ Desliza hacia arriba para lanzar · 🚶 camina con el celular <small style="opacity:.6">· v9</small></div>
+<div id="hint" class="hidden">⬆️ Desliza hacia arriba para lanzar · 🔄 gira el celular para ver en 360° <small style="opacity:.6">· v10</small></div>
 <div id="touch" class="hidden"></div>
 <div id="steps" class="hidden">📡 Preparando…</div>
 
@@ -109,7 +109,7 @@ const CFG = {
   PEER_PREFIX: 'arbasket-usb-',
   SCALE: 1.5,                     // 1 unidad = 1.5 m (aro a 3 m de altura)
   EYE: 1.5,                       // altura del celular sobre el piso (metros)
-  FOV: 62,                        // campo de visión de la cámara del celular
+  FOV: 70,                        // campo de visión de la cámara del celular
   G: 9.8,                         // gravedad
   BALL_R: 0.1,                    // radio del balón (0.15 m)
   RIM: { x: 0, y: 2.0, z: -0.35 },// centro del aro
@@ -132,11 +132,13 @@ const CFG = {
   POLE_CLEAR: 0.75,               // distancia mínima al poste (unidades) para no quedar encima
   THREE_PT_DIST: 3.0,             // distancia desde la que la canasta vale 3
   SPOTS: [                        // posiciones de tiro en la cancha
-    { n: 'Centro', x: 0, z: 4.8 },
+    { n: 'Centro', x: 0, z: 5.6 },
     { n: 'Izquierda', x: -2.0, z: 2.4 },
     { n: 'Derecha', x: 2.0, z: 2.4 },
     { n: 'Esquina', x: -2.3, z: 1.2 },
-    { n: 'Triple', x: 0, z: 4.9 }
+    { n: 'Triple', x: 0, z: 4.9 },
+    { n: 'Online A', x: -1.9, z: 5.0 },   // anfitrión
+    { n: 'Online B', x: 1.9, z: 5.0 }     // invitado
   ]
 };
 
@@ -148,7 +150,7 @@ const S = {
   mode: 'solo', isHost: false, started: false, track: 'gyro', xrSupported: false, xrPlaced: false, floorY: -1.5, camOk: false, camErr: false, spot: 0,
   score: 0, shots: 0, rivalScore: 0, rivalShots: 0,
   peer: null, conn: null, code: '', link: '',
-  remote: { b: new THREE.Vector3(), h: new THREE.Vector3(), last: 0, has: false, snap: false },
+  remote: { b: new THREE.Vector3(), h: new THREE.Vector3(), p: new THREE.Vector3(), yaw: 0, last: 0, has: false, snap: false },
   msgUntil: 0
 };
 const B = { state: 'held', pos: new THREE.Vector3(), vel: new THREE.Vector3(), prev: new THREE.Vector3(), t: 0, scored: false, startDist: 0, endT: 0, lastSnd: 0 };
@@ -156,7 +158,7 @@ const input = { down: false, samples: [], ndcX: 0, targetX: 0, flick: 0 };
 const Gyro = { on: false, has: false, a: 0, b: 0, g: 0, orient: 0, needCenter: false };
 
 let renderer, scene, camera, holder, courtRoot, court;
-let myHand, heldBall, ball, oppHand, oppBall, net, netAnim = 0, lastTime = 0, aimDots = [], aimRing;
+let avatar, myHand, heldBall, ball, oppHand, oppBall, net, netAnim = 0, lastTime = 0, aimDots = [], aimRing;
 const tmpV = new THREE.Vector3(), tmpW = new THREE.Vector3();
 
 /* ===================== AUDIO (Web Audio API) ===================== */
@@ -343,6 +345,38 @@ function buildHand(sleeveColor) {
   return g;
 }
 
+// Jugador rival (medidas en metros, se escala a la cancha)
+function buildAvatar(color) {
+  const g = new THREE.Group(), m = new THREE.Group(); g.add(m); m.scale.setScalar(1 / CFG.SCALE);
+  const skin = new THREE.MeshStandardMaterial({ color: 0xc68a5c, roughness: 0.6 });
+  const shirt = new THREE.MeshStandardMaterial({ color, roughness: 0.7 });
+  const shorts = new THREE.MeshStandardMaterial({ color: 0x14234a, roughness: 0.8 });
+  const shoe = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
+  const add = (geo, mat, x, y, z, rx = 0, rz = 0) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); o.rotation.set(rx, 0, rz); o.castShadow = true; m.add(o); return o; };
+  [-0.11, 0.11].forEach(x => {
+    add(new THREE.CylinderGeometry(0.06, 0.055, 0.82, 12), skin, x, 0.45, 0);
+    add(new THREE.BoxGeometry(0.11, 0.08, 0.26), shoe, x, 0.04, 0.04);
+  });
+  add(new THREE.CylinderGeometry(0.2, 0.18, 0.28, 16), shorts, 0, 0.88, 0);
+  add(new THREE.CylinderGeometry(0.21, 0.19, 0.55, 16), shirt, 0, 1.28, 0);
+  add(new THREE.SphereGeometry(0.21, 16, 10), shirt, 0, 1.52, 0).scale.set(1, 0.45, 0.8);
+  add(new THREE.CylinderGeometry(0.05, 0.05, 0.1, 10), skin, 0, 1.6, 0);
+  add(new THREE.SphereGeometry(0.12, 20, 14), skin, 0, 1.74, 0);
+  add(new THREE.SphereGeometry(0.125, 20, 14, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x1b1108 }), 0, 1.76, -0.01);
+  // Brazos levantados sosteniendo el balón frente a la cara
+  [-1, 1].forEach(sx => {
+    add(new THREE.CylinderGeometry(0.045, 0.04, 0.32, 10), skin, sx * 0.24, 1.45, 0.1, -0.9, sx * 0.35);
+    add(new THREE.CylinderGeometry(0.04, 0.035, 0.3, 10), skin, sx * 0.17, 1.62, 0.28, -1.6, sx * 0.25);
+  });
+  // Número en la camiseta y letrero con el nombre
+  const c = document.createElement('canvas'); c.width = 256; c.height = 96;
+  const x = c.getContext('2d'); x.fillStyle = 'rgba(0,0,0,.6)'; x.beginPath(); x.roundRect ? x.roundRect(8, 8, 240, 80, 24) : x.rect(8, 8, 240, 80); x.fill();
+  x.fillStyle = '#8fc0ff'; x.font = 'bold 54px system-ui,sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('RIVAL', 128, 50);
+  const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex(c), depthTest: false }));
+  tag.scale.set(0.75, 0.28, 1); tag.position.set(0, 2.15, 0); tag.renderOrder = 6; m.add(tag);
+  return g;
+}
+
 function buildCourt() {
   const grp = new THREE.Group();
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(5, 6.5),
@@ -464,6 +498,8 @@ function init3D() {
   // Rival
   oppHand = shadowAll(buildHand(0x2a7fff)); oppHand.userData.model.rotation.y = Math.PI; oppHand.visible = false; court.add(oppHand);
   oppBall = new THREE.Mesh(ballGeo, rvBallMat); oppBall.visible = false; oppBall.castShadow = true; court.add(oppBall);
+  oppHand.scale.setScalar(0);   // la mano suelta del rival ya no se usa: ahora hay un jugador completo
+  avatar = buildAvatar(0x2a7fff); avatar.visible = false; court.add(avatar);
 
   window.addEventListener('resize', onResize);
 }
@@ -545,8 +581,6 @@ function startCamera() {
       v.srcObject = stream; v.muted = true;
       const p = v.play(); if (p && p.catch) p.catch(() => {});
       S.camOk = true;
-      v.onloadedmetadata = () => startSlam();
-      if (v.videoWidth) startSlam();
     })
     .catch(() => { S.camErr = true; flashMsg('No se pudo abrir la cámara. Acepta el permiso para ver la cancha en tu entorno.', 4000); });
 }
@@ -687,7 +721,7 @@ function requestMotion() {
     } else listenGyro();
   } catch (_) {}
 }
-function listenMotion() { if (Walk.motionOn) return; Walk.motionOn = true; window.addEventListener('devicemotion', onMotion); }
+function listenMotion() { /* escenario fijo: ya no se camina, solo se gira el celular */ }
 function listenGyro() {
   if (Gyro.on) return;
   Gyro.on = true;
@@ -997,6 +1031,9 @@ function onData(d) {
   const R = S.remote;
   if (Array.isArray(d.b) && Array.isArray(d.h)) {
     R.b.fromArray(d.b); R.h.fromArray(d.h);
+    if (Array.isArray(d.p)) R.p.fromArray(d.p);
+    if (typeof d.y === 'number') R.yaw = d.y;
+    R.f = d.f === 1;
     if (!R.has) R.snap = true;
     R.has = true; R.last = performance.now();
   }
@@ -1013,7 +1050,9 @@ function sendState() {
   myHand.getWorldPosition(tmpW);
   const h = court.worldToLocal(tmpW.clone());
   const b = B.state === 'flying' ? B.pos : heldStartLocal();
-  try { S.conn.send({ t: 's', s: S.score, n: S.shots, b: [r3(b.x), r3(b.y), r3(b.z)], h: [r3(h.x), r3(h.y), r3(h.z)] }); } catch (_) {}
+  const me = court.worldToLocal(camera.getWorldPosition(new THREE.Vector3()));
+  const fw = court.worldToLocal(camera.localToWorld(new THREE.Vector3(0, 0, -1))).sub(me);
+  try { S.conn.send({ t: 's', s: S.score, n: S.shots, b: [r3(b.x), r3(b.y), r3(b.z)], h: [r3(h.x), r3(h.y), r3(h.z)], f: B.state === 'flying' ? 1 : 0, p: [r3(me.x), r3(me.y), r3(me.z)], y: r3(Math.atan2(fw.x, fw.z)) }); } catch (_) {}
 }
 
 /* ===================== BUCLE PRINCIPAL ===================== */
@@ -1028,7 +1067,6 @@ function update(dt) {
   } else {
     if (!(Slam.ok && !Gyro.has)) camera.rotation.set(0.12, 0, 0);
   }
-  if (S.track === 'slam' && (Slam.cost < 22 || (Slam.tick++ & 1) === 0)) slamStep();  // cada frame si el celular aguanta
 
   // Caminar: cada paso real te mueve suavemente hacia donde miras
   if (S.track !== 'xr' && Walk.pending > 0) { const st = Math.min(Walk.pending, dt * 2.2); Walk.pending -= st; walk(st, 0); }
@@ -1062,11 +1100,16 @@ function update(dt) {
   // Rival
   const R = S.remote;
   const alive = S.conn && S.conn.open && R.has && performance.now() - R.last < 2500;
-  oppHand.visible = oppBall.visible = !!alive;
+  oppHand.visible = oppBall.visible = avatar.visible = !!alive;
   if (alive) {
-    if (R.snap) { oppHand.position.copy(R.h); oppBall.position.copy(R.b); R.snap = false; }
+    if (R.snap) { oppHand.position.copy(R.h); oppBall.position.copy(R.b); avatar.position.set(R.p.x, 0, R.p.z); R.snap = false; }
+    avatar.position.x += (R.p.x - avatar.position.x) * 0.3;
+    avatar.position.z += (R.p.z - avatar.position.z) * 0.3;
+    let dy = R.yaw - avatar.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    avatar.rotation.y += dy * 0.3;
     oppHand.position.lerp(R.h, 0.45);
-    oppBall.position.lerp(R.b, 0.55);
+    if (R.f) oppBall.position.lerp(R.b, 0.55);
+    else { avatar.updateMatrixWorld(true); oppBall.position.copy(court.worldToLocal(avatar.localToWorld(new THREE.Vector3(0, 1.78 / CFG.SCALE, 0.38 / CFG.SCALE)))); }
     oppHand.lookAt(court.localToWorld(RIM_V.clone()));
   }
 
@@ -1098,7 +1141,7 @@ function startGame() {
   if (S.mode === 'online') $('rvBox').classList.remove('hidden');
   else setNet('Modo solo');
   init3D(); bindTouch(); updateHUD();
-  $('steps').classList.remove('hidden');
+  if (S.mode === 'online') placeAtSpot(S.isHost ? 5 : 6);   // cada jugador en su lado de la cancha
   lastTime = performance.now();
   renderer.setAnimationLoop(loop);
   const fallback = () => {
