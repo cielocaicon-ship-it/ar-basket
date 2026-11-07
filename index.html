@@ -11,7 +11,10 @@
 <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#fff;user-select:none;-webkit-user-select:none}
+html{background:#000}
+body{width:100%;height:100%;overflow:hidden;background:transparent;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#fff;user-select:none;-webkit-user-select:none}
+html{height:100%;overflow:hidden}
+video{z-index:-2!important}
 #gl{position:absolute;top:0;left:0;z-index:1}
 #touch{position:fixed;inset:0;z-index:5;touch-action:none}
 .screen{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;background:radial-gradient(circle at 50% 18%,#ff7a1a 0,#7a2a00 45%,#120700 100%);text-align:center;overflow-y:auto}
@@ -107,8 +110,8 @@ const CFG = {
   RIM_R: 0.3,                     // radio del aro
   RIM_TUBE: 0.022,                // grosor del aro
   BOARD: { x: 0, y: 2.3, z: -0.75, w: 1.4, h: 0.9, d: 0.05 }, // tablero
-  HAND_DIST: 1.6,                 // distancia de la mano a la cámara
-  HAND_NDC_Y: -0.68,              // altura de la mano en pantalla (-1 abajo, 1 arriba)
+  HAND_DIST: 4.0,                 // distancia de la mano a la cámara
+  HAND_NDC_Y: -0.62,              // altura de la mano en pantalla (-1 abajo, 1 arriba)
   IDEAL_SWIPE: 2.6,               // velocidad ideal del deslizamiento (pantallas/seg)
   MIN_SWIPE: 0.6,                 // velocidad mínima para lanzar
   SWIPE_TOLERANCE: 0.25,          // margen de error de fuerza (0.25 = ±25%)
