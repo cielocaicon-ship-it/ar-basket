@@ -88,14 +88,14 @@ input{flex:1;min-width:0;padding:14px;border-radius:12px;border:2px solid rgba(2
       <button class="ic" id="btnExit" title="Salir">✕</button>
     </div>
     <div id="net">Modo solo</div>
-    <button class="pill" id="btnCenter">🔄 Centrar aro</button>
+    <button class="pill" id="btnCenter">🔄 Reubicar cancha</button>
     <button class="pill hidden" id="btnSensors" style="background:#ff6a00;border-color:#ff6a00">📱 Activar movimiento</button>
   </div>
   <div class="score hidden" id="rvBox" style="position:fixed;top:max(110px,calc(env(safe-area-inset-top) + 100px));left:10px"><small>RIVAL</small><b id="rvScore">0</b><small id="rvShots">Tiros: 0</small></div>
 </div>
 <div id="msg" class="hidden"></div>
 <div id="toast"></div>
-<div id="hint" class="hidden">⬆️ Desliza hacia arriba para lanzar · 🚶 camina con el celular <small style="opacity:.6">· v8</small></div>
+<div id="hint" class="hidden">⬆️ Desliza hacia arriba para lanzar · 🚶 camina con el celular <small style="opacity:.6">· v9</small></div>
 <div id="touch" class="hidden"></div>
 <div id="steps" class="hidden">📡 Preparando…</div>
 
@@ -127,9 +127,12 @@ const CFG = {
   STEP_LEN: 0.65,                 // metros que avanzas por cada paso real detectado
   STEP_THRESHOLD: 1.3,            // sensibilidad del detector de pasos (más alto = menos sensible)
   BOUNDS: { x: 4.6, zMin: -1.6, zMax: 8.2 }, // bordes de la cancha (unidades)
+  SLAM_MAX_SPEED: 1.8,            // velocidad máxima al caminar (m/s): evita saltos
+  SLAM_DEADZONE: 0.003,           // movimientos más pequeños se ignoran (temblor de la mano)
+  POLE_CLEAR: 0.75,               // distancia mínima al poste (unidades) para no quedar encima
   THREE_PT_DIST: 3.0,             // distancia desde la que la canasta vale 3
   SPOTS: [                        // posiciones de tiro en la cancha
-    { n: 'Centro', x: 0, z: 2.7 },
+    { n: 'Centro', x: 0, z: 4.8 },
     { n: 'Izquierda', x: -2.0, z: 2.4 },
     { n: 'Derecha', x: 2.0, z: 2.4 },
     { n: 'Esquina', x: -2.3, z: 1.2 },
@@ -503,7 +506,7 @@ function walk(forward, right) {
   const me = court.worldToLocal(camera.getWorldPosition(new THREE.Vector3()));
   const Bd = CFG.BOUNDS;
   const cx = THREE.MathUtils.clamp(me.x, -Bd.x, Bd.x), cz = THREE.MathUtils.clamp(me.z, Bd.zMin, Bd.zMax);
-  const nearPole = Math.hypot(cx, cz - (CFG.BOARD.z - 0.45)) < 0.35;
+  const nearPole = Math.hypot(cx, cz - (CFG.BOARD.z - 0.45)) < CFG.POLE_CLEAR;
   if (nearPole) { courtRoot.position.copy(old); return; }
   if (cx !== me.x || cz !== me.z) {
     const fix = court.localToWorld(new THREE.Vector3(cx, me.y, cz)).sub(court.localToWorld(me.clone()));
@@ -553,9 +556,23 @@ function kickVideo() { const v = $('cam'); if (v.srcObject && v.paused) { const 
    AlvaAR (SLAM visual, licencia GPL-3, archivo alva_ar.js) calcula cómo se mueve
    el celular mirando la imagen de la cámara. El giro lo sigue dando el giroscopio. */
 const Slam = { on: false, starting: false, alva: null, cv: null, ctx: null, w: 0, h: 0, ok: false, prev: null,
-  scale: 0, roff: new THREE.Quaternion(), hasOff: false, lastPlane: 0, tick: 0, t0: 0, lostAt: 0, cost: 0 };
+  scale: 0, roff: new THREE.Quaternion(), hasOff: false, lastPlane: 0, tick: 0, t0: 0, lostAt: 0, cost: 0, vel: new THREE.Vector3() };
 const _m4 = new THREE.Matrix4(), _qr = new THREE.Quaternion(), _qs = new THREE.Quaternion(), _ps = new THREE.Vector3(),
   _pq = new THREE.Quaternion(), _pp = new THREE.Vector3(), _d = new THREE.Vector3(), _qoff = new THREE.Quaternion();
+// Mantiene al jugador dentro de la cancha y lejos del poste/tablero
+function keepPlayer() {
+  scene.updateMatrixWorld(true);
+  const me = court.worldToLocal(camera.position.clone());
+  const Bd = CFG.BOUNDS;
+  let x = THREE.MathUtils.clamp(me.x, -Bd.x, Bd.x), z = THREE.MathUtils.clamp(me.z, Bd.zMin, Bd.zMax);
+  const pz = CFG.BOARD.z - 0.45, dx = x, dz = z - pz, dd = Math.hypot(dx, dz);
+  if (dd < CFG.POLE_CLEAR) { const k = CFG.POLE_CLEAR / Math.max(dd, 1e-3); x = dx * k; z = pz + (dd > 1e-3 ? dz * k : CFG.POLE_CLEAR); }
+  if (z < CFG.BOARD.z + 0.3 && Math.abs(x) < CFG.BOARD.w / 2 + 0.3 && me.z > CFG.BOARD.z) z = CFG.BOARD.z + 0.3; // no meterse en el tablero
+  if (x !== me.x || z !== me.z) {
+    const w = court.localToWorld(new THREE.Vector3(x, me.y, z));
+    camera.position.x = w.x; camera.position.z = w.z;
+  }
+}
 function setTrack(t) { const el = $('steps'); if (el.textContent !== t) el.textContent = t; }
 async function startSlam() {
   if (Slam.starting || S.track === 'xr') return;
@@ -610,18 +627,29 @@ function slamStep() {
       _m4.fromArray(pl); _qr.setFromRotationMatrix(_m4);
       _pq.set(-_qr.x, _qr.y, _qr.z, _qr.w); _pp.set(pl[12], -pl[13], -pl[14]);
       const n = new THREE.Vector3(0, 0, 1).applyQuaternion(_pq);
+      const nW = n.clone().applyQuaternion(Slam.roff);                       // normal en el mundo real
+      const look = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
       const hgt = Math.abs(_d.copy(_ps).sub(_pp).dot(n));
-      if (hgt > 1e-4) { Slam.scale = CFG.EYE / hgt; flashMsg('✅ ¡Listo! Ya puedes caminar por la cancha', 2000); }
+      // Solo vale si el plano es el PISO (horizontal) y el celular mira hacia abajo
+      if (hgt > 1e-4 && Math.abs(nW.y) > 0.8 && look.y < -0.35) {
+        Slam.scale = CFG.EYE / hgt; Slam.prev = null;
+        flashMsg('✅ ¡Listo! Ya puedes caminar por la cancha', 2000);
+      } else if (look.y >= -0.35) setTrack('📡 Calibrando: apunta el celular HACIA EL PISO');
     }
   }
   if (Slam.scale) setTrack('📡 Seguimiento activo: camina por la cancha');
   // Mover la cámara lo que se movió el celular
   if (Slam.prev && Slam.scale && Slam.hasOff) {
     _d.copy(_ps).sub(Slam.prev).applyQuaternion(Slam.roff).multiplyScalar(Slam.scale);
-    if (_d.length() < 0.6) {
-      camera.position.add(_d);
-      camera.position.y = THREE.MathUtils.clamp(camera.position.y, S.floorY + 0.4, S.floorY + 2.4); // nunca bajo el piso
-    }
+    _d.y *= 0.3;                                             // la altura casi no cambia
+    const len = _d.length(), maxStep = CFG.SLAM_MAX_SPEED / 30;
+    if (len > CFG.SLAM_DEADZONE && len < 0.5) {
+      if (len > maxStep) _d.multiplyScalar(maxStep / len);
+      Slam.vel.lerp(_d, 0.35);
+      camera.position.add(Slam.vel);
+      camera.position.y = THREE.MathUtils.clamp(camera.position.y, S.floorY + 1.0, S.floorY + 2.0); // nunca bajo el piso
+      keepPlayer();
+    } else Slam.vel.multiplyScalar(0.5);
   }
   Slam.prev = (Slam.prev || new THREE.Vector3()).copy(_ps);
 }
@@ -1125,7 +1153,7 @@ $('btnBack').addEventListener('click', leave);
 $('btnExit').addEventListener('click', leave);
 $('btnMusic').addEventListener('click', () => { AudioFX.init(); $('btnMusic').style.opacity = AudioFX.toggle() ? 1 : 0.4; });
 $('btnSensors').addEventListener('click', () => { requestMotion(); $('btnSensors').classList.add('hidden'); setTimeout(() => { if (!Gyro.has) $('btnSensors').classList.remove('hidden'); }, 2500); });
-$('btnCenter').addEventListener('click', () => { requestMotion(); centerCourt(); flashMsg('Aro centrado ✔', 900); });
+$('btnCenter').addEventListener('click', () => { requestMotion(); centerCourt(); flashMsg('Cancha ubicada frente a ti ✔', 1200); });
 window.addEventListener('beforeunload', () => { if (S.peer) { try { S.peer.destroy(); } catch (_) {} } });
 
 // Si llega con enlace ?sala=CODIGO, se rellena el campo automáticamente
