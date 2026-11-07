@@ -15,10 +15,7 @@ body{width:100%;height:100%;overflow:hidden;background:transparent;font-family:s
 #cam{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;background:#1a1d24}
 #gl{position:fixed;top:0;left:0;z-index:1}
 #touch{position:fixed;inset:0;z-index:5;touch-action:none}
-#joy{position:fixed;left:18px;bottom:calc(max(14px,env(safe-area-inset-bottom)) + 34px);width:118px;height:118px;border-radius:50%;background:rgba(0,0,0,.35);border:2px solid rgba(255,255,255,.45);z-index:8;touch-action:none}
-#joy::after{content:'CAMINAR';position:absolute;top:-18px;left:0;right:0;text-align:center;font-size:.62rem;font-weight:800;letter-spacing:1px;opacity:.85}
-#knob{position:absolute;left:34px;top:34px;width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.85);box-shadow:0 2px 8px rgba(0,0,0,.4);pointer-events:none}
-#steps{position:fixed;right:12px;bottom:calc(max(14px,env(safe-area-inset-bottom)) + 34px);z-index:8;font-size:.7rem;background:rgba(0,0,0,.55);padding:4px 8px;border-radius:8px;pointer-events:none}
+{position:fixed;right:12px;bottom:calc(max(14px,env(safe-area-inset-bottom)) + 34px);z-index:8;font-size:.7rem;background:rgba(0,0,0,.55);padding:4px 8px;border-radius:8px;pointer-events:none}
 .screen{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;background:radial-gradient(circle at 50% 18%,#ff7a1a 0,#7a2a00 45%,#120700 100%);text-align:center;overflow-y:auto}
 .hidden{display:none!important}
 h1{font-size:2.5rem;letter-spacing:2px;text-shadow:0 4px 0 #000;line-height:1}
@@ -91,16 +88,15 @@ input{flex:1;min-width:0;padding:14px;border-radius:12px;border:2px solid rgba(2
       <button class="ic" id="btnExit" title="Salir">✕</button>
     </div>
     <div id="net">Modo solo</div>
-    <button class="pill" id="btnSpot">📍 Posición: Centro</button>
     <button class="pill" id="btnCenter">🔄 Centrar aro</button>
+    <button class="pill hidden" id="btnSensors" style="background:#ff6a00;border-color:#ff6a00">📱 Activar movimiento</button>
   </div>
   <div class="score hidden" id="rvBox" style="position:fixed;top:max(110px,calc(env(safe-area-inset-top) + 100px));left:10px"><small>RIVAL</small><b id="rvScore">0</b><small id="rvShots">Tiros: 0</small></div>
 </div>
 <div id="msg" class="hidden"></div>
 <div id="toast"></div>
-<div id="hint" class="hidden">⬆️ Desliza hacia arriba para lanzar · 🚶 camina o usa el joystick <small style="opacity:.6">· v6</small></div>
+<div id="hint" class="hidden">⬆️ Desliza hacia arriba para lanzar · 🚶 camina con el celular <small style="opacity:.6">· v7</small></div>
 <div id="touch" class="hidden"></div>
-<div id="joy" class="hidden"><div id="knob"></div></div>
 <div id="steps" class="hidden">👣 Pasos: 0</div>
 
 <script>
@@ -120,20 +116,20 @@ const CFG = {
   RIM_R: 0.22,                    // radio del aro
   RIM_TUBE: 0.022,                // grosor del aro
   BOARD: { x: 0, y: 2.3, z: -0.75, w: 1.4, h: 0.9, d: 0.05 }, // tablero
-  HAND_DIST: 2.1,                 // distancia de la mano a la cámara (metros)
+  HAND_DIST: 0.8,                 // distancia de la mano a la cámara (metros)
+  HAND_SCALE: 0.4,                // tamaño de la mano (pequeña y cerca = no se entierra)
   HAND_NDC_Y: -0.68,              // altura de la mano en pantalla (-1 abajo, 1 arriba)
   IDEAL_SWIPE: 2.6,               // velocidad ideal del deslizamiento (pantallas/seg)
   MIN_SWIPE: 0.6,                 // velocidad mínima para lanzar
   SWIPE_TOLERANCE: 0.25,          // margen de error de fuerza (0.25 = ±25%)
   AIM_TOLERANCE: 0.12,            // margen de error lateral
   SUBSTEPS: 4,                    // subpasos de física por frame
-  WALK_SPEED: 1.6,                // velocidad al caminar con el joystick (m/s)
   STEP_LEN: 0.65,                 // metros que avanzas por cada paso real detectado
-  STEP_THRESHOLD: 2.2,            // sensibilidad del detector de pasos (más alto = menos sensible)
+  STEP_THRESHOLD: 1.3,            // sensibilidad del detector de pasos (más alto = menos sensible)
   BOUNDS: { x: 4.6, zMin: -1.6, zMax: 8.2 }, // bordes de la cancha (unidades)
   THREE_PT_DIST: 3.0,             // distancia desde la que la canasta vale 3
   SPOTS: [                        // posiciones de tiro en la cancha
-    { n: 'Centro', x: 0, z: 3.4 },
+    { n: 'Centro', x: 0, z: 2.7 },
     { n: 'Izquierda', x: -2.0, z: 2.4 },
     { n: 'Derecha', x: 2.0, z: 2.4 },
     { n: 'Esquina', x: -2.3, z: 1.2 },
@@ -280,22 +276,44 @@ function halfCourtTexture() {
   g.fillText('AR BASKET', hx, H - 90);
   return tex(c);
 }
+function pebbleTexture() {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 256;
+  const g = c.getContext('2d'); g.fillStyle = '#808080'; g.fillRect(0, 0, 512, 256);
+  for (let i = 0; i < 9000; i++) { const v = 100 + Math.random() * 120 | 0; g.fillStyle = `rgb(${v},${v},${v})`; g.beginPath(); g.arc(Math.random() * 512, Math.random() * 256, 1.3, 0, 7); g.fill(); }
+  return new THREE.CanvasTexture(c);
+}
+function makeEnvironment() {
+  const pm = new THREE.PMREMGenerator(renderer);
+  const c = document.createElement('canvas'); c.width = 4; c.height = 256;
+  const g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 256);
+  gr.addColorStop(0, '#9cc8ff'); gr.addColorStop(0.45, '#ffffff'); gr.addColorStop(0.55, '#d8c3a5'); gr.addColorStop(1, '#6b4a2b');
+  g.fillStyle = gr; g.fillRect(0, 0, 4, 256);
+  const sc = new THREE.Scene();
+  sc.add(new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), new THREE.MeshBasicMaterial({ map: tex(c), side: THREE.BackSide })));
+  scene.environment = pm.fromScene(sc, 0.03).texture;
+  pm.dispose();
+}
 function apronTexture() {
-  const c = document.createElement('canvas'); c.width = 512; c.height = 512;
+  const c = document.createElement('canvas'); c.width = 1024; c.height = 1024;
   const g = c.getContext('2d');
-  g.fillStyle = '#9c6634'; g.fillRect(0, 0, 512, 512);
-  for (let x = 0; x < 512; x += 16) for (let y = -((x * 29) % 96); y < 512; y += 96) {
-    g.fillStyle = `rgba(${Math.random() < .5 ? '255,220,180' : '60,30,5'},${0.05 + Math.random() * 0.07})`; g.fillRect(x, y, 16, 96);
-    g.fillStyle = 'rgba(40,20,5,.3)'; g.fillRect(x, y, 16, 1); g.fillRect(x, 0, 1, 512);
+  g.fillStyle = '#a86e3a'; g.fillRect(0, 0, 1024, 1024);
+  for (let x = 0; x < 1024; x += 20) for (let y = -((x * 29) % 140); y < 1024; y += 140) {
+    g.fillStyle = `rgba(${Math.random() < .5 ? '255,220,180' : '60,30,5'},${0.05 + Math.random() * 0.07})`; g.fillRect(x, y, 20, 140);
+    g.fillStyle = 'rgba(40,20,5,.3)'; g.fillRect(x, y, 20, 1.5); g.fillRect(x, 0, 1, 1024);
   }
-  const t = tex(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(3, 3); return t;
+  // Bordes que se desvanecen para fundirse con la cámara
+  g.globalCompositeOperation = 'destination-in';
+  const fade = (x0, y0, x1, y1) => { const gr = g.createLinearGradient(x0, y0, x1, y1); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(0.12, 'rgba(0,0,0,1)'); gr.addColorStop(0.88, 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); return gr; };
+  g.fillStyle = fade(0, 0, 1024, 0); g.fillRect(0, 0, 1024, 1024);
+  g.fillStyle = fade(0, 0, 0, 1024); g.fillRect(0, 0, 1024, 1024);
+  return tex(c);
 }
 function boardTexture() {
   const c = document.createElement('canvas'); c.width = 280; c.height = 180;
   const g = c.getContext('2d');
-  g.fillStyle = '#ffffff'; g.fillRect(0, 0, 280, 180);
-  g.strokeStyle = '#d61f1f'; g.lineWidth = 10; g.strokeRect(5, 5, 270, 170);
-  g.lineWidth = 7; g.strokeRect(95, 75, 90, 70);
+  g.clearRect(0, 0, 280, 180);
+  g.strokeStyle = '#ffffff'; g.lineWidth = 8; g.strokeRect(4, 4, 272, 172);
+  g.strokeStyle = '#ffffff'; g.lineWidth = 6; g.strokeRect(95, 78, 90, 68);
   return tex(c);
 }
 
@@ -329,12 +347,9 @@ function buildCourt() {
   floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0.004, 2.25); floor.receiveShadow = true; grp.add(floor);
   const Bd = CFG.BOUNDS, ow = Bd.x * 2 + 0.8, od = Bd.zMax - Bd.zMin + 0.8;
   const outer = new THREE.Mesh(new THREE.PlaneGeometry(ow, od),
-    new THREE.MeshStandardMaterial({ map: apronTexture(), roughness: 0.6 }));
+    new THREE.MeshStandardMaterial({ map: apronTexture(), roughness: 0.5, transparent: true }));
   outer.rotation.x = -Math.PI / 2; outer.position.set(0, 0, (Bd.zMin + Bd.zMax) / 2); outer.receiveShadow = true; grp.add(outer);
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0x1d4fb8, roughness: 0.8, transparent: true, opacity: 0.85 });
-  const wallH = 0.35, wallT = 0.08;
-  [[0, Bd.zMin - 0.4, ow, wallT], [0, Bd.zMax + 0.4, ow, wallT], [-Bd.x - 0.4, (Bd.zMin + Bd.zMax) / 2, wallT, od], [Bd.x + 0.4, (Bd.zMin + Bd.zMax) / 2, wallT, od]]
-    .forEach(([x, z, w, d]) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), wallMat); m.position.set(x, wallH / 2, z); m.receiveShadow = true; grp.add(m); });
+
 
   const metal = new THREE.MeshStandardMaterial({ color: 0x3a3f48, metalness: 0.7, roughness: 0.35 });
   const pad = new THREE.MeshStandardMaterial({ color: 0x1d4fb8, roughness: 0.8 });
@@ -351,12 +366,14 @@ function buildCourt() {
   const brace = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.55), metal);
   brace.position.set(0, bd.y - 0.25, (poleZ + bd.z) / 2); brace.rotation.x = -0.55; grp.add(brace);
 
-  const side = new THREE.MeshStandardMaterial({ color: 0xc9ced6, roughness: 0.4, metalness: 0.2 });
-  const frontMat = new THREE.MeshStandardMaterial({ map: boardTexture(), roughness: 0.25 });
-  const board = new THREE.Mesh(new THREE.BoxGeometry(bd.w, bd.h, bd.d), [side, side, side, side, frontMat, side]);
-  board.position.set(bd.x, bd.y, bd.z); grp.add(board);
-  const frame = new THREE.Mesh(new THREE.BoxGeometry(bd.w + 0.06, bd.h + 0.06, 0.03), metal);
-  frame.position.set(bd.x, bd.y, bd.z - bd.d / 2 - 0.016); grp.add(frame);
+  const glass = new THREE.MeshStandardMaterial({ color: 0xdcecff, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.32, depthWrite: false });
+  const board = new THREE.Mesh(new THREE.BoxGeometry(bd.w, bd.h, bd.d), glass);
+  board.position.set(bd.x, bd.y, bd.z); board.renderOrder = 2; grp.add(board);
+  const lines = new THREE.Mesh(new THREE.PlaneGeometry(bd.w, bd.h),
+    new THREE.MeshStandardMaterial({ map: boardTexture(), transparent: true, roughness: 0.3, depthWrite: false }));
+  lines.position.set(bd.x, bd.y, bd.z + bd.d / 2 + 0.006); lines.renderOrder = 3; grp.add(lines);
+  [[0, bd.h / 2 + 0.02, bd.w + 0.06, 0.04], [0, -bd.h / 2 - 0.02, bd.w + 0.06, 0.04], [-bd.w / 2 - 0.02, 0, 0.04, bd.h + 0.08], [bd.w / 2 + 0.02, 0, 0.04, bd.h + 0.08]]
+    .forEach(([x, y, w, h]) => { const f = new THREE.Mesh(new THREE.BoxGeometry(w, h, bd.d + 0.02), metal); f.position.set(bd.x + x, bd.y + y, bd.z); grp.add(f); });
 
   const rimMat = new THREE.MeshStandardMaterial({ color: 0xff4a10, metalness: 0.5, roughness: 0.3 });
   const rim = new THREE.Mesh(new THREE.TorusGeometry(CFG.RIM_R, CFG.RIM_TUBE, 10, 48), rimMat);
@@ -364,7 +381,7 @@ function buildCourt() {
   const front = bd.z + bd.d / 2, back = CFG.RIM.z - CFG.RIM_R;
   const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.03, Math.max(0.02, back - front)), rimMat);
   bracket.position.set(0, CFG.RIM.y, (front + back) / 2); grp.add(bracket);
-  shadowAll(grp); floor.castShadow = false;
+  shadowAll(grp); floor.castShadow = false; outer.castShadow = false; board.castShadow = false; lines.castShadow = false;
 
   // Red
   const pts = [], N = 16, top = CFG.RIM_R, mid = CFG.RIM_R * 0.8, bot = CFG.RIM_R * 0.57, H1 = -0.2, H2 = -0.4;
@@ -385,7 +402,7 @@ function buildCourt() {
   sun.position.set(2.5, 7, 4);
   sun.target.position.set(0, 0, 1.2);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.mapSize.set(2048, 2048); sun.shadow.radius = 4;
   const sc = sun.shadow.camera; sc.left = -7; sc.right = 7; sc.top = 7; sc.bottom = -7; sc.near = 0.5; sc.far = 30;
   sun.shadow.bias = -0.0008;
   grp.add(sun); grp.add(sun.target);
@@ -408,7 +425,9 @@ function init3D() {
   camera = new THREE.PerspectiveCamera(CFG.FOV, window.innerWidth / window.innerHeight, 0.05, 200);
   camera.rotation.order = 'YXZ';
   scene.add(camera);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x8a6a4a, 0.75));
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x8a6a4a, 0.4));
+  makeEnvironment();
+
 
   holder = new THREE.Group(); scene.add(holder);          // giro para "centrar aro"
   courtRoot = new THREE.Group(); holder.add(courtRoot);    // posición de tiro
@@ -416,8 +435,9 @@ function init3D() {
   placeAtSpot(0);
 
   const ballGeo = new THREE.SphereGeometry(CFG.BALL_R, 32, 20);
-  const myBallMat = new THREE.MeshStandardMaterial({ map: ballTexture('#e8691c'), roughness: 0.7 });
-  const rvBallMat = new THREE.MeshStandardMaterial({ map: ballTexture('#2f7be8'), roughness: 0.7 });
+  const bump = pebbleTexture();
+  const myBallMat = new THREE.MeshStandardMaterial({ map: ballTexture('#d9601a'), bumpMap: bump, bumpScale: 0.004, roughness: 0.62 });
+  const rvBallMat = new THREE.MeshStandardMaterial({ map: ballTexture('#2f7be8'), bumpMap: bump, bumpScale: 0.004, roughness: 0.62 });
 
   ball = new THREE.Mesh(ballGeo, myBallMat); ball.visible = false; ball.castShadow = true; court.add(ball);
 
@@ -431,7 +451,7 @@ function init3D() {
   aimRing.rotation.x = Math.PI / 2; aimRing.position.copy(RIM_V); court.add(aimRing);
 
   // Mano propia: va pegada a la cámara
-  myHand = buildHand(0xff6a00); camera.add(myHand);
+  myHand = buildHand(0xff6a00); myHand.scale.setScalar(CFG.HAND_SCALE); camera.add(myHand);
   const heldR = CFG.BALL_R * CFG.SCALE;           // mismo tamaño real que el balón lanzado
   heldBall = new THREE.Mesh(new THREE.SphereGeometry(heldR, 32, 20), myBallMat);
   heldBall.position.set(0, 0.03 + heldR, -0.08);
@@ -461,12 +481,11 @@ function placeAtSpot(i) {
   courtRoot.rotation.set(0, th, 0);
   const off = new THREE.Vector3(sp.x * k, 0, sp.z * k).applyAxisAngle(new THREE.Vector3(0, 1, 0), th);
   courtRoot.position.set(-off.x, -CFG.EYE, -off.z);
-  $('btnSpot').textContent = '📍 Posición: ' + sp.n;
   if (B.state === 'flying') resetBall();
 }
 
 /* ===================== CAMINAR POR LA CANCHA ===================== */
-const Walk = { joyX: 0, joyY: 0, joyId: null, pending: 0, steps: 0, lastStep: 0, avg: 9.81, motionOn: false };
+const Walk = { pending: 0, steps: 0, lastStep: 0, f: 0, armed: false, gx: 0, gy: 0, gz: 9.81, block: 0, motionOn: false };
 // Mueve al jugador "metros" hacia donde mira el celular (fx, fz = adelante / derecha)
 function walk(forward, right) {
   if (!forward && !right) return;
@@ -491,31 +510,24 @@ function walk(forward, right) {
     courtRoot.position.sub(fix);
   }
 }
-// Detector de pasos con el acelerómetro
+// Detector de pasos con el acelerómetro: cada "golpe" al caminar = 1 paso
 function onMotion(e) {
-  const a = e.accelerationIncludingGravity;
-  if (!a || a.x == null) return;
-  const m = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
-  Walk.avg += (m - Walk.avg) * 0.05;
+  let lin;
+  const a = e.acceleration;
+  if (a && a.x != null) lin = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+  else {
+    const g = e.accelerationIncludingGravity;
+    if (!g || g.x == null) return;
+    Walk.gx += (g.x - Walk.gx) * 0.08; Walk.gy += (g.y - Walk.gy) * 0.08; Walk.gz += (g.z - Walk.gz) * 0.08;
+    lin = Math.hypot(g.x - Walk.gx, g.y - Walk.gy, g.z - Walk.gz);
+  }
+  Walk.f += (lin - Walk.f) * 0.35;
   const now = performance.now();
-  if (!input.down && m - Walk.avg > CFG.STEP_THRESHOLD && now - Walk.lastStep > 330) {
-    Walk.lastStep = now; Walk.steps++; Walk.pending += CFG.STEP_LEN;
+  if (!Walk.armed && Walk.f > CFG.STEP_THRESHOLD && now - Walk.lastStep > 300 && !input.down && now > Walk.block) {
+    Walk.armed = true; Walk.lastStep = now; Walk.steps++; Walk.pending += CFG.STEP_LEN;
     $('steps').textContent = '👣 Pasos: ' + Walk.steps;
   }
-}
-function bindJoystick() {
-  const j = $('joy'), k = $('knob'), R = 44;
-  const set = (x, y) => { Walk.joyX = x; Walk.joyY = y; k.style.left = (34 + x * R) + 'px'; k.style.top = (34 + y * R) + 'px'; };
-  const move = e => {
-    const r = j.getBoundingClientRect();
-    let x = (e.clientX - r.left - r.width / 2) / R, y = (e.clientY - r.top - r.height / 2) / R;
-    const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; }
-    set(x, y);
-  };
-  j.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); Walk.joyId = e.pointerId; try { j.setPointerCapture(e.pointerId); } catch (_) {} move(e); });
-  j.addEventListener('pointermove', e => { if (Walk.joyId === e.pointerId) { e.preventDefault(); move(e); } });
-  const end = e => { if (Walk.joyId === e.pointerId) { Walk.joyId = null; set(0, 0); } };
-  j.addEventListener('pointerup', end); j.addEventListener('pointercancel', end);
+  if (Walk.armed && Walk.f < CFG.STEP_THRESHOLD * 0.5) Walk.armed = false;
 }
 
 /* ===================== CÁMARA DEL CELULAR ===================== */
@@ -704,7 +716,7 @@ function throwBall(speed, lat) {
   const r = calcVelocity(start, speed, lat);
   B.pos.copy(start); B.vel.copy(r.v);
   B.state = 'flying'; B.t = 0; B.scored = false; B.endT = 0; B.startDist = r.horiz;
-  heldBall.visible = false; ball.visible = true; ball.position.copy(start);
+  heldBall.visible = false; ball.visible = true; ball.position.copy(start); ball.scale.setScalar(CFG.HAND_SCALE / CFG.SCALE);
   S.shots++; input.flick = 1;
   AudioFX.whoosh(); updateHUD();
 }
@@ -768,6 +780,7 @@ function bindTouch() {
     input.samples.push({ x: e.clientX, y: e.clientY, t: performance.now() });
     const sw = currentSwipe();
     input.down = false;
+    Walk.block = performance.now() + 500;
     if (sw && sw.speed > CFG.MIN_SWIPE) throwBall(sw.speed, sw.lat);
   };
   el.addEventListener('pointerup', end);
@@ -880,9 +893,8 @@ function update(dt) {
     camera.rotation.set(0.12, 0, 0);
   }
 
-  // Caminar: pasos reales (suave) + joystick
+  // Caminar: cada paso real te mueve suavemente hacia donde miras
   if (Walk.pending > 0) { const st = Math.min(Walk.pending, dt * 2.2); Walk.pending -= st; walk(st, 0); }
-  if (Walk.joyX || Walk.joyY) walk(-Walk.joyY * CFG.WALK_SPEED * dt, Walk.joyX * CFG.WALK_SPEED * dt);
 
   // Mano: sigue el eje X del dedo (pegada a la cámara)
   input.ndcX += (input.targetX - input.ndcX) * Math.min(1, dt * 14);
@@ -902,6 +914,7 @@ function update(dt) {
     if (B.pos.y < CFG.BALL_R) { B.pos.y = CFG.BALL_R; if (B.vel.y < 0) B.vel.y = 0; }
     if (B.endT && B.t > B.endT) resetBall();
     ball.position.copy(B.pos);
+    ball.scale.setScalar(CFG.HAND_SCALE / CFG.SCALE + (1 - CFG.HAND_SCALE / CFG.SCALE) * Math.min(1, B.t / 0.3));
     ball.rotation.x -= B.vel.z * dt * 5;
     ball.rotation.z += B.vel.x * dt * 5;
   }
@@ -948,8 +961,9 @@ function startGame() {
   $('hint').dataset.base = $('hint').innerHTML;
   if (S.mode === 'online') $('rvBox').classList.remove('hidden');
   else setNet('Modo solo');
-  init3D(); startCamera(); bindTouch(); bindJoystick(); updateHUD();
-  $('joy').classList.remove('hidden'); $('steps').classList.remove('hidden');
+  init3D(); startCamera(); bindTouch(); updateHUD();
+  $('steps').classList.remove('hidden');
+  setTimeout(() => { if (!Gyro.has) $('btnSensors').classList.remove('hidden'); }, 2500);
   requestAnimationFrame(t => { lastTime = t; loop(t); });
 }
 
@@ -997,7 +1011,7 @@ $('btnStartHost').addEventListener('click', () => { AudioFX.init(); requestMotio
 $('btnBack').addEventListener('click', leave);
 $('btnExit').addEventListener('click', leave);
 $('btnMusic').addEventListener('click', () => { AudioFX.init(); $('btnMusic').style.opacity = AudioFX.toggle() ? 1 : 0.4; });
-$('btnSpot').addEventListener('click', () => { placeAtSpot((S.spot + 1) % CFG.SPOTS.length); requestMotion(); });
+$('btnSensors').addEventListener('click', () => { requestMotion(); $('btnSensors').classList.add('hidden'); setTimeout(() => { if (!Gyro.has) $('btnSensors').classList.remove('hidden'); }, 2500); });
 $('btnCenter').addEventListener('click', () => { requestMotion(); centerCourt(); flashMsg('Aro centrado ✔', 900); });
 window.addEventListener('beforeunload', () => { if (S.peer) { try { S.peer.destroy(); } catch (_) {} } });
 
