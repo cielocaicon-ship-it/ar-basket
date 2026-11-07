@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#ff6a00">
+<title>AR Basket · Baloncesto en Realidad Aumentada</title>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/three.js/build/ar-threex.js"></script>
+<script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#fff;user-select:none;-webkit-user-select:none}
+#gl{position:absolute;top:0;left:0;z-index:1}
+#touch{position:fixed;inset:0;z-index:5;touch-action:none}
+.screen{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;background:radial-gradient(circle at 50% 18%,#ff7a1a 0,#7a2a00 45%,#120700 100%);text-align:center;overflow-y:auto}
+.hidden{display:none!important}
+h1{font-size:2.5rem;letter-spacing:2px;text-shadow:0 4px 0 #000;line-height:1}
+h1 span{color:#ffd84a}
+.sub{opacity:.88;font-size:.92rem;max-width:340px;line-height:1.4}
+.btn{width:100%;max-width:320px;padding:15px;border:none;border-radius:14px;font-size:1.05rem;font-weight:800;color:#fff;background:#ff6a00;box-shadow:0 5px 0 #a33f00;cursor:pointer}
+.btn:active{transform:translateY(3px);box-shadow:0 2px 0 #a33f00}
+.btn.alt{background:#2a7fff;box-shadow:0 5px 0 #1449a0}
+.btn.ghost{background:rgba(255,255,255,.12);box-shadow:none;border:2px solid rgba(255,255,255,.45)}
+.row{display:flex;gap:8px;width:100%;max-width:320px}
+.row .btn{width:auto;flex:0 0 112px}
+input{flex:1;min-width:0;padding:14px;border-radius:12px;border:2px solid rgba(255,255,255,.3);background:rgba(0,0,0,.45);color:#fff;font-size:1.1rem;text-transform:uppercase;letter-spacing:3px;text-align:center;outline:none}
+.code{font-size:2.6rem;font-weight:900;letter-spacing:8px;background:rgba(0,0,0,.45);padding:10px 22px;border-radius:14px}
+.link{font-size:.75rem;word-break:break-all;opacity:.85;max-width:320px}
+.err{color:#ffe0a0;min-height:1.2em;font-size:.9rem}
+a{color:#ffe08a}
+#hud{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;justify-content:space-between;align-items:flex-start;gap:6px;padding:max(10px,env(safe-area-inset-top)) 10px 10px;pointer-events:none}
+.score{background:rgba(0,0,0,.65);border-radius:12px;padding:6px 12px;min-width:84px;text-align:center}
+.score b{display:block;font-size:1.8rem;line-height:1.1}
+.score small{font-size:.68rem;opacity:.85;letter-spacing:1px}
+#meBox{border:2px solid #ff7a1a}
+#rvBox{border:2px solid #3b8bff}
+.mid{display:flex;flex-direction:column;align-items:center;gap:6px}
+.tools{display:flex;gap:6px;pointer-events:auto}
+.ic{width:42px;height:42px;border-radius:50%;border:none;background:rgba(0,0,0,.65);color:#fff;font-size:1.15rem;cursor:pointer}
+#net{font-size:.7rem;background:rgba(0,0,0,.55);padding:3px 8px;border-radius:8px;max-width:150px;text-align:center}
+#msg{position:fixed;left:50%;top:44%;transform:translate(-50%,-50%);z-index:9;background:rgba(0,0,0,.72);padding:12px 18px;border-radius:12px;max-width:85%;text-align:center;pointer-events:none;font-size:.95rem;line-height:1.35}
+#toast{position:fixed;left:50%;top:27%;transform:translate(-50%,-50%) scale(.6);z-index:11;font-size:2.3rem;font-weight:900;color:#ffd84a;text-shadow:0 4px 0 #000,0 0 22px #ff7a1a;opacity:0;transition:all .25s;pointer-events:none;white-space:nowrap}
+#toast.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+#hint{position:fixed;bottom:max(14px,env(safe-area-inset-bottom));left:0;right:0;text-align:center;z-index:9;font-size:.85rem;opacity:.9;pointer-events:none;text-shadow:0 2px 4px #000}
+</style>
+</head>
+<body>
+
+<!-- ===== MENÚ PRINCIPAL ===== -->
+<div id="menu" class="screen">
+  <h1>AR <span>BASKET</span></h1>
+  <p class="sub">Baloncesto en Realidad Aumentada sobre tu mesa. Imprime o abre en otra pantalla el marcador <a href="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/data/images/hiro.png" target="_blank" rel="noopener">HIRO</a> y ponlo sobre la mesa.</p>
+  <button class="btn" id="btnSolo">🏀 Modo Solo</button>
+  <button class="btn alt" id="btnCreate">🌐 Crear Partida Online</button>
+  <div class="row">
+    <input id="joinCode" maxlength="8" placeholder="CÓDIGO" autocomplete="off">
+    <button class="btn ghost" id="btnJoin">Unirse</button>
+  </div>
+  <p class="err" id="menuErr"></p>
+  <p class="sub" style="font-size:.8rem">Desliza el dedo hacia arriba con fuerza para lanzar. Mueve el dedo a los lados para mover la mano.</p>
+</div>
+
+<!-- ===== SALA DEL ANFITRIÓN ===== -->
+<div id="lobby" class="screen hidden">
+  <h1>TU <span>SALA</span></h1>
+  <p class="sub">Comparte este código o el enlace con tu amigo:</p>
+  <div class="code" id="roomCode">·····</div>
+  <p class="link" id="roomLink"></p>
+  <button class="btn ghost" id="btnCopy">📋 Copiar enlace</button>
+  <button class="btn ghost hidden" id="btnShare">📤 Compartir</button>
+  <p class="err" id="lobbyStatus">Creando sala…</p>
+  <button class="btn" id="btnStartHost">📷 Abrir cámara AR</button>
+  <button class="btn ghost" id="btnBack">← Volver</button>
+</div>
+
+<!-- ===== HUD EN JUEGO ===== -->
+<div id="hud" class="hidden">
+  <div class="score" id="meBox"><small>TÚ</small><b id="myScore">0</b><small id="shots">Tiros: 0</small></div>
+  <div class="mid">
+    <div class="tools">
+      <button class="ic" id="btnMusic" title="Música">🎵</button>
+      <button class="ic" id="btnExit" title="Salir">✕</button>
+    </div>
+    <div id="net">Modo solo</div>
+  </div>
+  <div class="score hidden" id="rvBox"><small>RIVAL</small><b id="rvScore">0</b><small id="rvShots">Tiros: 0</small></div>
+</div>
+<div id="msg" class="hidden"></div>
+<div id="toast"></div>
+<div id="hint" class="hidden">⬆️ Desliza hacia arriba para lanzar · ↔️ mueve la mano</div>
+<div id="touch" class="hidden"></div>
+
+<script>
+'use strict';
+/* =========================================================
+   CONFIGURACIÓN (ajusta aquí la dificultad y medidas)
+   Unidades = ancho del marcador HIRO (1 unidad ≈ tamaño impreso)
+   ========================================================= */
+const CFG = {
+  DATA: 'https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/data/data/',
+  PEER_PREFIX: 'arbasket-usb-',
+  G: 9.8,                         // gravedad
+  BALL_R: 0.15,                   // radio del balón
+  RIM: { x: 0, y: 2.0, z: -0.35 },// centro del aro
+  RIM_R: 0.3,                     // radio del aro
+  RIM_TUBE: 0.022,                // grosor del aro
+  BOARD: { x: 0, y: 2.3, z: -0.75, w: 1.4, h: 0.9, d: 0.05 }, // tablero
+  HAND_DIST: 1.6,                 // distancia de la mano a la cámara
+  HAND_NDC_Y: -0.68,              // altura de la mano en pantalla (-1 abajo, 1 arriba)
+  IDEAL_SWIPE: 2.6,               // velocidad ideal del deslizamiento (pantallas/seg)
+  MIN_SWIPE: 0.6,                 // velocidad mínima para lanzar
+  SWIPE_TOLERANCE: 0.25,          // margen de error de fuerza (0.25 = ±25%)
+  AIM_TOLERANCE: 0.12,            // margen de error lateral
+  SUBSTEPS: 4,                    // subpasos de física por frame
+  THREE_PT_DIST: 5                // distancia para que la canasta valga 3
+};
+
+const $ = id => document.getElementById(id);
+const RIM_V = new THREE.Vector3(CFG.RIM.x, CFG.RIM.y, CFG.RIM.z);
+
+/* ===================== ESTADO ===================== */
+const S = {
+  mode: 'solo', isHost: false, started: false,
+  score: 0, shots: 0, rivalScore: 0, rivalShots: 0,
+  peer: null, conn: null, code: '', link: '',
+  remote: { b: new THREE.Vector3(), h: new THREE.Vector3(), last: 0, has: false, snap: false },
+  msgUntil: 0
+};
+const B = { state: 'held', pos: new THREE.Vector3(), vel: new THREE.Vector3(), prev: new THREE.Vector3(), t: 0, scored: false, startDist: 0, endT: 0, lastSnd: 0 };
+const input = { down: false, samples: [], ndcX: 0, targetX: 0, flick: 0 };
+
+let renderer, scene, camera, markerRoot, court, arSource, arCtx, arReady = false, camError = false;
+let myHand, heldBall, ball, ballShadow, oppHand, oppBall, oppShadow, net, netAnim = 0, lastTime = 0;
+const tmpV = new THREE.Vector3(), tmpW = new THREE.Vector3();
+
+/* ===================== AUDIO (Web Audio API) ===================== */
+const AudioFX = {
+  ctx: null, master: null, music: null, sfx: null, noise: null, musicOn: true, step: 0, next: 0, timer: null,
+  init() {
+    if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
+    const C = window.AudioContext || window.webkitAudioContext;
+    if (!C) return;
+    this.ctx = new C();
+    this.master = this.ctx.createGain(); this.master.gain.value = 0.9; this.master.connect(this.ctx.destination);
+    this.music = this.ctx.createGain(); this.music.gain.value = 0.14; this.music.connect(this.master);
+    this.sfx = this.ctx.createGain(); this.sfx.gain.value = 0.8; this.sfx.connect(this.master);
+    const len = this.ctx.sampleRate;
+    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    this.noise = buf;
+    this.next = this.ctx.currentTime + 0.1;
+    this.timer = setInterval(() => this.schedule(), 25);
+  },
+  hz(n) { return 440 * Math.pow(2, (n - 69) / 12); },
+  tone(type, f, t, dur, vol, dest, fEnd) {
+    const c = this.ctx, o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.setValueAtTime(f, t);
+    if (fEnd) o.frequency.exponentialRampToValueAtTime(fEnd, t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(dest || this.sfx);
+    o.start(t); o.stop(t + dur + 0.05);
+  },
+  noiseHit(t, dur, vol, type, f, dest, fEnd) {
+    const c = this.ctx, s = c.createBufferSource(), fl = c.createBiquadFilter(), g = c.createGain();
+    s.buffer = this.noise; fl.type = type; fl.frequency.setValueAtTime(f, t);
+    if (fEnd) fl.frequency.exponentialRampToValueAtTime(fEnd, t + dur);
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(fl); fl.connect(g); g.connect(dest || this.sfx);
+    s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.05);
+  },
+  schedule() {
+    const spb = 60 / 104 / 4;
+    while (this.next < this.ctx.currentTime + 0.12) {
+      this.playStep(this.step, this.next);
+      this.next += spb; this.step = (this.step + 1) % 64;
+    }
+  },
+  playStep(s, t) {
+    const prog = [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]]; // Am F C G
+    const ch = prog[Math.floor(s / 16)], i = s % 16, M = this.music;
+    if (i % 8 === 0) this.tone('sine', 150, t, 0.25, 0.9, M, 45);                 // bombo
+    if (i === 4 || i === 12) this.noiseHit(t, 0.15, 0.35, 'bandpass', 1800, M);    // caja
+    if (i % 2 === 0) this.noiseHit(t, 0.04, 0.12, 'highpass', 7000, M);            // hi-hat
+    if ([0, 3, 8, 11, 14].includes(i)) this.tone('triangle', this.hz(ch[0] - 24), t, 0.22, 0.5, M); // bajo
+    if (i % 2 === 0) this.tone('square', this.hz(ch[(i / 2) % 3] + 12), t, 0.12, 0.07, M);           // arpegio
+  },
+  toggle() {
+    this.musicOn = !this.musicOn;
+    if (this.music) this.music.gain.setTargetAtTime(this.musicOn ? 0.14 : 0, this.ctx.currentTime, 0.05);
+    return this.musicOn;
+  },
+  now() { return this.ctx ? this.ctx.currentTime : 0; },
+  bounce(i) { if (!this.ctx) return; const t = this.now(); this.tone('sine', 160, t, 0.18, 0.15 + 0.6 * i, null, 55); this.noiseHit(t, 0.05, 0.2 * i, 'lowpass', 600); },
+  rim() { if (!this.ctx) return; const t = this.now(); this.tone('triangle', 1250, t, 0.3, 0.25); this.tone('triangle', 1830, t, 0.22, 0.15); },
+  board() { if (!this.ctx) return; const t = this.now(); this.noiseHit(t, 0.12, 0.6, 'lowpass', 900); this.tone('sine', 95, t, 0.15, 0.5); },
+  swish() { if (!this.ctx) return; this.noiseHit(this.now(), 0.4, 0.5, 'bandpass', 3200, null, 900); },
+  whoosh() { if (!this.ctx) return; this.noiseHit(this.now(), 0.25, 0.3, 'highpass', 600, null, 3000); },
+  score(rival) {
+    if (!this.ctx) return;
+    const t = this.now(), base = rival ? 60 : 72;
+    [0, 4, 7, 12].forEach((n, k) => this.tone('square', this.hz(base + n), t + k * 0.08, 0.15, 0.18));
+  }
+};
+
+/* ===================== TEXTURAS ===================== */
+function ballTexture(color) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = color; g.fillRect(0, 0, 256, 128);
+  g.strokeStyle = '#1a0a00'; g.lineWidth = 4; g.beginPath();
+  g.moveTo(0, 64); g.lineTo(256, 64);
+  g.moveTo(64, 0); g.lineTo(64, 128);
+  g.moveTo(192, 0); g.lineTo(192, 128);
+  g.moveTo(110, 0); g.quadraticCurveTo(150, 64, 110, 128);
+  g.moveTo(146, 0); g.quadraticCurveTo(106, 64, 146, 128);
+  g.stroke();
+  return new THREE.CanvasTexture(c);
+}
+function courtTexture() {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 580;
+  const g = c.getContext('2d');
+  g.fillStyle = '#c8813f'; g.fillRect(0, 0, 512, 580);
+  g.strokeStyle = 'rgba(90,45,10,.35)'; g.lineWidth = 2;
+  for (let x = 0; x < 512; x += 32) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 580); g.stroke(); }
+  g.strokeStyle = '#fff'; g.lineWidth = 6;
+  g.strokeRect(6, 6, 500, 568);
+  g.fillStyle = 'rgba(255,90,0,.55)'; g.fillRect(186, 6, 140, 200);
+  g.strokeRect(186, 6, 140, 200);
+  g.beginPath(); g.arc(256, 206, 70, 0, Math.PI); g.stroke();
+  g.beginPath(); g.arc(256, 111, 210, 0.15, Math.PI - 0.15); g.stroke();
+  g.beginPath(); g.moveTo(6, 574); g.lineTo(506, 574); g.stroke();
+  g.beginPath(); g.arc(256, 574, 70, Math.PI, 0); g.stroke();
+  return new THREE.CanvasTexture(c);
+}
+function boardTexture() {
+  const c = document.createElement('canvas'); c.width = 280; c.height = 180;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(255,255,255,.9)'; g.fillRect(0, 0, 280, 180);
+  g.strokeStyle = '#d61f1f'; g.lineWidth = 10; g.strokeRect(5, 5, 270, 170);
+  g.lineWidth = 7; g.strokeRect(95, 75, 90, 70);
+  return new THREE.CanvasTexture(c);
+}
+
+/* ===================== MODELOS 3D ===================== */
+function buildHand(sleeveColor) {
+  const g = new THREE.Group(), m = new THREE.Group(); g.add(m);
+  const skin = new THREE.MeshStandardMaterial({ color: 0xf1c27d, roughness: 0.7 });
+  const cloth = new THREE.MeshStandardMaterial({ color: sleeveColor, roughness: 0.8 });
+  const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.09, 0.8, 14), cloth);
+  sleeve.rotation.x = -1.1; sleeve.position.set(0, -0.27, 0.53); m.add(sleeve);
+  const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.065, 0.28, 12), skin);
+  forearm.rotation.x = -1.1; forearm.position.set(0, -0.06, 0.12); m.add(forearm);
+  const palm = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.06, 0.22), skin);
+  palm.position.set(0, 0, -0.05); m.add(palm);
+  for (let i = 0; i < 4; i++) {
+    const f = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.04, 0.13), skin);
+    f.position.set(-0.075 + i * 0.05, 0.02, -0.21); f.rotation.x = 0.3; m.add(f);
+  }
+  const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.045, 0.11), skin);
+  thumb.position.set(0.12, 0.02, -0.07); thumb.rotation.y = -0.6; m.add(thumb);
+  g.userData.model = m;
+  return g;
+}
+
+function buildCourt() {
+  const grp = new THREE.Group();
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(3, 3.4),
+    new THREE.MeshStandardMaterial({ map: courtTexture(), transparent: true, opacity: 0.93, roughness: 0.8 }));
+  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0.001, 0.7); grp.add(floor);
+
+  const metal = new THREE.MeshStandardMaterial({ color: 0x555b66, metalness: 0.6, roughness: 0.4 });
+  const bd = CFG.BOARD;
+  const poleZ = bd.z - 0.3;
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, bd.y + 0.1, 12), metal);
+  pole.position.set(0, (bd.y + 0.1) / 2, poleZ); grp.add(pole);
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.4), metal);
+  base.position.set(0, 0.04, poleZ - 0.05); grp.add(base);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.3), metal);
+  arm.position.set(0, bd.y, (poleZ + bd.z) / 2); grp.add(arm);
+
+  const board = new THREE.Mesh(new THREE.BoxGeometry(bd.w, bd.h, bd.d),
+    new THREE.MeshStandardMaterial({ color: 0xdddddd, transparent: true, opacity: 0.5 }));
+  board.position.set(bd.x, bd.y, bd.z); grp.add(board);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(bd.w, bd.h),
+    new THREE.MeshBasicMaterial({ map: boardTexture(), transparent: true }));
+  face.position.set(bd.x, bd.y, bd.z + bd.d / 2 + 0.002); grp.add(face);
+
+  const rimMat = new THREE.MeshStandardMaterial({ color: 0xff4a10, metalness: 0.4, roughness: 0.35 });
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(CFG.RIM_R, CFG.RIM_TUBE, 8, 40), rimMat);
+  rim.rotation.x = Math.PI / 2; rim.position.copy(RIM_V); grp.add(rim);
+  const front = bd.z + bd.d / 2, back = CFG.RIM.z - CFG.RIM_R;
+  const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.03, Math.max(0.02, back - front)), rimMat);
+  bracket.position.set(0, CFG.RIM.y, (front + back) / 2); grp.add(bracket);
+
+  // Red
+  const pts = [], N = 14, top = CFG.RIM_R, mid = 0.24, bot = 0.17, H1 = -0.2, H2 = -0.4;
+  for (let i = 0; i < N; i++) {
+    const a0 = i / N * Math.PI * 2, a1 = (i + 1) / N * Math.PI * 2, ah = (i + 0.5) / N * Math.PI * 2;
+    const T0 = [Math.cos(a0) * top, 0, Math.sin(a0) * top], T1 = [Math.cos(a1) * top, 0, Math.sin(a1) * top];
+    const Mh = [Math.cos(ah) * mid, H1, Math.sin(ah) * mid];
+    const B0 = [Math.cos(a0) * bot, H2, Math.sin(a0) * bot], B1 = [Math.cos(a1) * bot, H2, Math.sin(a1) * bot];
+    pts.push(...T0, ...Mh, ...Mh, ...T1, ...Mh, ...B0, ...Mh, ...B1, ...B0, ...B1);
+  }
+  const ng = new THREE.BufferGeometry();
+  ng.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  net = new THREE.LineSegments(ng, new THREE.LineBasicMaterial({ color: 0xffffff }));
+  net.position.copy(RIM_V); grp.add(net);
+  return grp;
+}
+
+function makeShadow() {
+  const s = new THREE.Mesh(new THREE.CircleGeometry(CFG.BALL_R, 20),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false }));
+  s.rotation.x = -Math.PI / 2;
+  return s;
+}
+
+/* ===================== ESCENA + AR ===================== */
+function init3D() {
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setClearColor(0x000000, 0);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(640, 480);
+  renderer.domElement.id = 'gl';
+  document.body.appendChild(renderer.domElement);
+
+  scene = new THREE.Scene();
+  camera = new THREE.Camera();
+  scene.add(camera);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.0));
+  const dl = new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(2, 5, 3); scene.add(dl);
+
+  markerRoot = new THREE.Group(); markerRoot.visible = false; scene.add(markerRoot);
+  court = buildCourt(); markerRoot.add(court);
+
+  const ballGeo = new THREE.SphereGeometry(CFG.BALL_R, 24, 16);
+  const myBallMat = new THREE.MeshStandardMaterial({ map: ballTexture('#f07a1e'), roughness: 0.75 });
+  const rvBallMat = new THREE.MeshStandardMaterial({ map: ballTexture('#3b8bff'), roughness: 0.75 });
+
+  ball = new THREE.Mesh(ballGeo, myBallMat); ball.visible = false; court.add(ball);
+  ballShadow = makeShadow(); ballShadow.visible = false; court.add(ballShadow);
+
+  myHand = buildHand(0xff6a00); scene.add(myHand);
+  heldBall = new THREE.Mesh(ballGeo, myBallMat);
+  heldBall.position.set(0, 0.03 + CFG.BALL_R, -0.08);
+  myHand.add(heldBall);
+
+  oppHand = buildHand(0x2a7fff); oppHand.userData.model.rotation.y = Math.PI; oppHand.visible = false; court.add(oppHand);
+  oppBall = new THREE.Mesh(ballGeo, rvBallMat); oppBall.visible = false; court.add(oppBall);
+  oppShadow = makeShadow(); oppShadow.visible = false; court.add(oppShadow);
+}
+
+function initAR() {
+  if (typeof THREEx === 'undefined') { camError = true; showMsg('No se pudo cargar AR.js. Revisa tu conexión a internet y recarga.'); return; }
+  arSource = new THREEx.ArToolkitSource({ sourceType: 'webcam' });
+  arSource.init(() => { onResize(); setTimeout(onResize, 500); setTimeout(onResize, 1500); },
+    () => { camError = true; showMsg('No se pudo abrir la cámara. Acepta el permiso y verifica que la página esté en HTTPS (GitHub Pages).'); });
+
+  arCtx = new THREEx.ArToolkitContext({ cameraParametersUrl: CFG.DATA + 'camera_para.dat', detectionMode: 'mono', maxDetectionRate: 60 });
+  arCtx.init(() => {
+    camera.projectionMatrix.copy(arCtx.getProjectionMatrix());
+    camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+    arReady = true; onResize();
+  });
+
+  new THREEx.ArMarkerControls(arCtx, markerRoot, {
+    type: 'pattern', patternUrl: CFG.DATA + 'patt.hiro', changeMatrixMode: 'modelViewMatrix',
+    smooth: true, smoothCount: 5, smoothTolerance: 0.01, smoothThreshold: 2
+  });
+  window.addEventListener('resize', () => { onResize(); setTimeout(onResize, 300); });
+}
+
+function onResize() {
+  if (!arSource || !arSource.ready) return;
+  arSource.onResizeElement();
+  arSource.copyElementSizeTo(renderer.domElement);
+  if (arCtx && arCtx.arController && arCtx.arController.canvas) arSource.copyElementSizeTo(arCtx.arController.canvas);
+}
+
+/* ===================== FÍSICA DEL BALÓN ===================== */
+function playSnd(fn, arg) {
+  const t = performance.now();
+  if (t - B.lastSnd < 60) return;
+  B.lastSnd = t; fn.call(AudioFX, arg);
+}
+
+function stepBall(h) {
+  const p = B.pos, v = B.vel, r = CFG.BALL_R;
+  B.prev.copy(p);
+  v.y -= CFG.G * h;
+  p.addScaledVector(v, h);
+
+  // 1) Canasta: cruza el plano del aro hacia abajo dentro del círculo
+  const dxr = p.x - RIM_V.x, dzr = p.z - RIM_V.z, horiz = Math.hypot(dxr, dzr);
+  if (!B.scored && B.prev.y >= RIM_V.y && p.y < RIM_V.y && v.y < 0 && horiz < CFG.RIM_R - r * 0.4) {
+    B.scored = true; onScore();
+  }
+
+  // 2) Red: frena el balón y lo centra
+  if (p.y < RIM_V.y && p.y > RIM_V.y - 0.42 && horiz < CFG.RIM_R) {
+    v.x *= 0.97; v.z *= 0.97; v.y *= 0.985;
+    v.x -= dxr * 2.0 * h; v.z -= dzr * 2.0 * h;
+  }
+
+  // 3) Aro (toroide): punto más cercano del círculo del aro
+  let qx, qz;
+  if (horiz > 1e-5) { qx = RIM_V.x + dxr / horiz * CFG.RIM_R; qz = RIM_V.z + dzr / horiz * CFG.RIM_R; }
+  else { qx = RIM_V.x + CFG.RIM_R; qz = RIM_V.z; }
+  const nx = p.x - qx, ny = p.y - RIM_V.y, nz = p.z - qz;
+  const dist = Math.sqrt(nx * nx + ny * ny + nz * nz), minD = r + CFG.RIM_TUBE;
+  if (dist < minD && dist > 1e-6) {
+    const ux = nx / dist, uy = ny / dist, uz = nz / dist;
+    p.x += ux * (minD - dist); p.y += uy * (minD - dist); p.z += uz * (minD - dist);
+    const vn = v.x * ux + v.y * uy + v.z * uz;
+    if (vn < 0) {
+      v.x -= 1.6 * vn * ux; v.y -= 1.6 * vn * uy; v.z -= 1.6 * vn * uz; // rebote (restitución 0.6)
+      v.multiplyScalar(0.92);                                          // fricción del aro
+      if (-vn > 0.4) playSnd(AudioFX.rim);
+    }
+  }
+
+  // 4) Tablero (cara frontal y trasera)
+  const bd = CFG.BOARD, frontZ = bd.z + bd.d / 2, backZ = bd.z - bd.d / 2;
+  if (Math.abs(p.x - bd.x) < bd.w / 2 + r * 0.5 && Math.abs(p.y - bd.y) < bd.h / 2 + r * 0.5) {
+    if (p.z - r < frontZ && B.prev.z - r >= frontZ - 0.02 && v.z < 0) {
+      p.z = frontZ + r; v.z = -v.z * 0.7; v.x *= 0.9; v.y *= 0.9; playSnd(AudioFX.board);
+    } else if (p.z + r > backZ && B.prev.z + r <= backZ + 0.02 && v.z > 0) {
+      p.z = backZ - r; v.z = -v.z * 0.7; playSnd(AudioFX.board);
+    }
+  }
+
+  // 5) Suelo / mesa
+  if (p.y < r) {
+    p.y = r;
+    if (v.y < 0) {
+      if (v.y < -0.8) playSnd(AudioFX.bounce, Math.min(1, -v.y / 6));
+      v.y = -v.y * 0.62; v.x *= 0.85; v.z *= 0.85;
+      if (Math.abs(v.y) < 0.3) v.y = 0;
+    }
+  }
+}
+
+function onScore() {
+  const pts = B.startDist > CFG.THREE_PT_DIST ? 3 : 2;
+  S.score += pts;
+  toast(pts === 3 ? '¡TRIPLE! +3' : '¡CANASTA! +2');
+  AudioFX.swish(); AudioFX.score(false);
+  netAnim = 1; updateHUD();
+}
+
+function resetBall() {
+  B.state = 'held'; ball.visible = false; ballShadow.visible = false; heldBall.visible = true;
+}
+
+/* ===================== LANZAMIENTO (FLICK) ===================== */
+function throwBall(speed, lat) {
+  if (B.state !== 'held' || !arReady) return;
+  if (!markerRoot.visible) { flashMsg('Primero enfoca el marcador HIRO 🎯'); return; }
+
+  court.updateMatrixWorld(true);
+  heldBall.getWorldPosition(tmpW);
+  const start = court.worldToLocal(tmpW.clone());
+  const D = RIM_V.clone().sub(start);
+  const horiz = Math.hypot(D.x, D.z);
+  const T = THREE.MathUtils.clamp(0.75 + horiz * 0.1, 0.75, 1.6);
+
+  // Velocidad ideal para una parábola que cae en el centro del aro
+  const v = new THREE.Vector3(D.x / T, (D.y + 0.5 * CFG.G * T * T) / T, D.z / T);
+
+  // Fuerza según la velocidad del deslizamiento
+  const ratio = speed / CFG.IDEAL_SWIPE;
+  let err = ratio - 1;
+  if (Math.abs(err) < CFG.SWIPE_TOLERANCE) err = 0; else err -= Math.sign(err) * CFG.SWIPE_TOLERANCE;
+  const power = THREE.MathUtils.clamp(1 + err * 0.3, 0.72, 1.3);
+  v.multiplyScalar(power);
+
+  // Desvío lateral según la inclinación del deslizamiento
+  let l = THREE.MathUtils.clamp(lat, -1, 1);
+  if (Math.abs(l) < CFG.AIM_TOLERANCE) l = 0;
+  const ang = -l * 0.3, c = Math.cos(ang), s = Math.sin(ang);
+  const vx = v.x * c + v.z * s, vz = -v.x * s + v.z * c;
+  v.x = vx; v.z = vz;
+
+  B.pos.copy(start); B.vel.copy(v);
+  B.state = 'flying'; B.t = 0; B.scored = false; B.endT = 0; B.startDist = horiz;
+  heldBall.visible = false; ball.visible = true; ball.position.copy(start);
+  S.shots++; input.flick = 1;
+  AudioFX.whoosh(); updateHUD();
+}
+
+/* ===================== CONTROLES TÁCTILES ===================== */
+function ndcX(e) {
+  const r = renderer.domElement.getBoundingClientRect();
+  return THREE.MathUtils.clamp(((e.clientX - r.left) / r.width) * 2 - 1, -0.8, 0.8);
+}
+function bindTouch() {
+  const el = $('touch');
+  el.addEventListener('pointerdown', e => {
+    e.preventDefault(); AudioFX.init();
+    input.down = true;
+    input.samples = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
+    input.targetX = ndcX(e);
+    if (el.setPointerCapture) { try { el.setPointerCapture(e.pointerId); } catch (_) {} }
+  });
+  el.addEventListener('pointermove', e => {
+    if (!input.down) return;
+    e.preventDefault();
+    const now = performance.now();
+    input.samples.push({ x: e.clientX, y: e.clientY, t: now });
+    while (input.samples.length > 2 && now - input.samples[0].t > 120) input.samples.shift();
+    input.targetX = ndcX(e);
+  });
+  const end = e => {
+    if (!input.down) return;
+    input.down = false;
+    input.samples.push({ x: e.clientX, y: e.clientY, t: performance.now() });
+    const a = input.samples[0], b = input.samples[input.samples.length - 1];
+    const dt = Math.max(0.016, (b.t - a.t) / 1000);
+    const dy = (a.y - b.y) / window.innerHeight;
+    const dx = (b.x - a.x) / window.innerWidth;
+    const speed = dy / dt;
+    if (dy > 0.04 && speed > CFG.MIN_SWIPE) throwBall(speed, dx / dy);
+  };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
+}
+
+/* ===================== MULTIJUGADOR (PeerJS) ===================== */
+function genCode() {
+  const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s = '';
+  for (let i = 0; i < 5; i++) s += a[Math.floor(Math.random() * a.length)];
+  return s;
+}
+function createRoom() {
+  if (typeof Peer === 'undefined') { $('menuErr').textContent = 'No cargó PeerJS. Revisa tu conexión.'; return; }
+  AudioFX.init();
+  S.mode = 'online'; S.isHost = true; S.code = genCode();
+  $('menu').classList.add('hidden'); $('lobby').classList.remove('hidden');
+  $('roomCode').textContent = '·····'; $('roomLink').textContent = ''; lobbyStatus('Creando sala…');
+  const peer = new Peer(CFG.PEER_PREFIX + S.code, { debug: 1 });
+  S.peer = peer;
+  peer.on('open', () => {
+    $('roomCode').textContent = S.code;
+    S.link = location.origin + location.pathname + '?sala=' + S.code;
+    $('roomLink').textContent = S.link;
+    if (navigator.share) $('btnShare').classList.remove('hidden');
+    lobbyStatus('Esperando a tu rival… Puedes abrir la cámara mientras tanto.');
+    setNet('Sala ' + S.code + ' · esperando rival');
+  });
+  peer.on('connection', c => {
+    if (S.conn && S.conn.open) {
+      c.on('open', () => { c.send({ t: 'full' }); setTimeout(() => c.close(), 400); });
+      return;
+    }
+    setupConn(c);
+  });
+  peer.on('disconnected', () => { if (!peer.destroyed) { try { peer.reconnect(); } catch (_) {} } });
+  peer.on('error', e => {
+    if (e.type === 'unavailable-id') { peer.destroy(); createRoom(); return; }
+    lobbyStatus('Error de red: ' + e.type); setNet('Error: ' + e.type);
+  });
+}
+function joinRoom() {
+  const code = $('joinCode').value.trim().toUpperCase();
+  if (code.length < 4) { $('menuErr').textContent = 'Escribe el código de la sala.'; return; }
+  if (typeof Peer === 'undefined') { $('menuErr').textContent = 'No cargó PeerJS. Revisa tu conexión.'; return; }
+  AudioFX.init();
+  S.mode = 'online'; S.isHost = false; S.code = code;
+  $('menuErr').textContent = 'Conectando con la sala ' + code + '…';
+  if (S.peer) { try { S.peer.destroy(); } catch (_) {} }
+  const peer = new Peer({ debug: 1 });
+  S.peer = peer;
+  peer.on('open', () => {
+    const c = peer.connect(CFG.PEER_PREFIX + code, { serialization: 'json', reliable: false });
+    setupConn(c);
+  });
+  peer.on('error', e => {
+    const m = e.type === 'peer-unavailable' ? 'Esa sala no existe o ya se cerró.' : 'Error de red: ' + e.type;
+    $('menuErr').textContent = m; setNet(m);
+  });
+}
+function setupConn(c) {
+  S.conn = c;
+  c.on('open', () => {
+    setNet('Rival conectado ✔');
+    if (S.isHost) lobbyStatus('¡Rival conectado! Abre la cámara para jugar.');
+    else startGame();
+    c.send({ t: 's', s: S.score, n: S.shots });
+  });
+  c.on('data', onData);
+  c.on('close', () => {
+    if (S.conn === c) { S.conn = null; S.remote.has = false; }
+    setNet(S.isHost ? 'Rival salió · sala ' + S.code + ' abierta' : 'Rival desconectado');
+    if (S.isHost) lobbyStatus('Tu rival se desconectó. Esperando otro…');
+  });
+  c.on('error', () => setNet('Error en la conexión'));
+}
+function onData(d) {
+  if (!d || typeof d !== 'object') return;
+  if (d.t === 'full') { $('menuErr').textContent = 'La sala ya está llena.'; setNet('Sala llena'); return; }
+  const R = S.remote;
+  if (Array.isArray(d.b) && Array.isArray(d.h)) {
+    R.b.fromArray(d.b); R.h.fromArray(d.h);
+    if (!R.has) R.snap = true;
+    R.has = true; R.last = performance.now();
+  }
+  if (typeof d.s === 'number') {
+    if (d.s > S.rivalScore) { toast('RIVAL +' + (d.s - S.rivalScore), true); AudioFX.score(true); }
+    S.rivalScore = d.s;
+  }
+  if (typeof d.n === 'number') S.rivalShots = d.n;
+  updateHUD();
+}
+const r3 = n => Math.round(n * 1000) / 1000;
+function sendState() {
+  if (!S.conn || !S.conn.open) return;
+  const pkt = { t: 's', s: S.score, n: S.shots };
+  if (markerRoot.visible) {
+    court.updateMatrixWorld(true);
+    myHand.getWorldPosition(tmpW);
+    const h = court.worldToLocal(tmpW.clone());
+    let b;
+    if (B.state === 'flying') b = B.pos;
+    else { heldBall.getWorldPosition(tmpW); b = court.worldToLocal(tmpW.clone()); }
+    pkt.b = [r3(b.x), r3(b.y), r3(b.z)];
+    pkt.h = [r3(h.x), r3(h.y), r3(h.z)];
+  }
+  try { S.conn.send(pkt); } catch (_) {}
+}
+
+/* ===================== BUCLE PRINCIPAL ===================== */
+function update(dt) {
+  // Mano: sigue el eje X del dedo
+  input.ndcX += (input.targetX - input.ndcX) * Math.min(1, dt * 14);
+  if (arReady) {
+    tmpV.set(input.ndcX, CFG.HAND_NDC_Y, 0.5).unproject(camera).normalize().multiplyScalar(CFG.HAND_DIST);
+    myHand.position.copy(tmpV);
+  } else {
+    myHand.position.set(input.ndcX, -0.6, -CFG.HAND_DIST);
+  }
+  input.flick = Math.max(0, input.flick - dt * 3);
+  myHand.rotation.set(0.2 + Math.sin(input.flick * Math.PI) * 0.9, input.ndcX * 0.3, 0);
+
+  // Balón
+  if (B.state === 'flying') {
+    const h = dt / CFG.SUBSTEPS;
+    for (let i = 0; i < CFG.SUBSTEPS; i++) stepBall(h);
+    B.t += dt;
+    const sp = B.vel.length();
+    if (!B.endT && (B.t > 4.5 || (B.pos.y <= CFG.BALL_R + 0.001 && sp < 0.4) || B.pos.length() > 25)) B.endT = B.t + 0.5;
+    if (B.endT && B.t > B.endT) resetBall();
+    ball.position.copy(B.pos);
+    ball.rotation.x -= B.vel.z * dt * 5;
+    ball.rotation.z += B.vel.x * dt * 5;
+    ballShadow.visible = ball.visible;
+    ballShadow.position.set(B.pos.x, 0.003, B.pos.z);
+    ballShadow.scale.setScalar(Math.max(0.35, 1 - B.pos.y * 0.15));
+  }
+
+  // Animación de la red
+  if (netAnim > 0) { netAnim = Math.max(0, netAnim - dt * 2.5); net.scale.set(1 - netAnim * 0.15, 1 + Math.sin(netAnim * Math.PI) * 0.45, 1 - netAnim * 0.15); }
+
+  // Rival
+  const R = S.remote;
+  const alive = S.conn && S.conn.open && R.has && performance.now() - R.last < 2500;
+  oppHand.visible = oppBall.visible = oppShadow.visible = !!alive;
+  if (alive) {
+    if (R.snap) { oppHand.position.copy(R.h); oppBall.position.copy(R.b); R.snap = false; }
+    oppHand.position.lerp(R.h, 0.45);
+    oppBall.position.lerp(R.b, 0.55);
+    court.updateMatrixWorld(true);
+    oppHand.lookAt(court.localToWorld(RIM_V.clone()));
+    oppShadow.position.set(oppBall.position.x, 0.003, oppBall.position.z);
+    oppShadow.scale.setScalar(Math.max(0.35, 1 - oppBall.position.y * 0.15));
+  }
+
+  sendState();
+
+  // Mensajes de estado
+  if (performance.now() < S.msgUntil) return;
+  if (camError) return;
+  if (!arReady || !arSource || !arSource.ready) showMsg('Iniciando cámara…');
+  else if (!markerRoot.visible) showMsg('🎯 Apunta la cámara al marcador HIRO sobre la mesa');
+  else hideMsg();
+}
+
+function loop(now) {
+  requestAnimationFrame(loop);
+  const dt = Math.min(0.05, Math.max(0, (now - lastTime) / 1000));
+  lastTime = now;
+  if (arSource && arSource.ready && arReady) arCtx.update(arSource.domElement);
+  update(dt);
+  renderer.render(scene, camera);
+}
+
+function startGame() {
+  if (S.started) return;
+  S.started = true;
+  $('menu').classList.add('hidden'); $('lobby').classList.add('hidden');
+  $('hud').classList.remove('hidden'); $('hint').classList.remove('hidden'); $('touch').classList.remove('hidden');
+  if (S.mode === 'online') $('rvBox').classList.remove('hidden');
+  else setNet('Modo solo');
+  init3D(); initAR(); bindTouch(); updateHUD();
+  requestAnimationFrame(t => { lastTime = t; loop(t); });
+}
+
+/* ===================== UI ===================== */
+function updateHUD() {
+  $('myScore').textContent = S.score;
+  $('shots').textContent = 'Tiros: ' + S.shots;
+  $('rvScore').textContent = S.rivalScore;
+  $('rvShots').textContent = 'Tiros: ' + S.rivalShots;
+}
+function setNet(t) { $('net').textContent = t; }
+function lobbyStatus(t) { $('lobbyStatus').textContent = t; }
+function showMsg(t) { const m = $('msg'); if (m.textContent !== t) m.textContent = t; m.classList.remove('hidden'); }
+function hideMsg() { $('msg').classList.add('hidden'); }
+function flashMsg(t) { showMsg(t); S.msgUntil = performance.now() + 1500; }
+let toastTimer = null;
+function toast(t, rival) {
+  const el = $('toast');
+  el.textContent = t;
+  el.style.color = rival ? '#8fc0ff' : '#ffd84a';
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 1300);
+}
+function copyLink() {
+  if (!S.link) return;
+  const done = () => lobbyStatus('¡Enlace copiado! Envíaselo a tu amigo.');
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(S.link).then(done, fallback);
+  else fallback();
+  function fallback() {
+    const ta = document.createElement('textarea'); ta.value = S.link; document.body.appendChild(ta);
+    ta.select(); try { document.execCommand('copy'); done(); } catch (_) { lobbyStatus('Copia el enlace manualmente.'); }
+    ta.remove();
+  }
+}
+
+$('btnSolo').addEventListener('click', () => { AudioFX.init(); S.mode = 'solo'; startGame(); });
+$('btnCreate').addEventListener('click', createRoom);
+$('btnJoin').addEventListener('click', joinRoom);
+$('joinCode').addEventListener('keydown', e => { if (e.key === 'Enter') joinRoom(); });
+$('btnCopy').addEventListener('click', copyLink);
+$('btnShare').addEventListener('click', () => { navigator.share({ title: 'AR Basket', text: '¡Juega baloncesto AR conmigo! Sala ' + S.code, url: S.link }).catch(() => {}); });
+$('btnStartHost').addEventListener('click', () => { AudioFX.init(); startGame(); });
+$('btnBack').addEventListener('click', () => { if (S.peer) { try { S.peer.destroy(); } catch (_) {} } location.href = location.pathname; });
+$('btnMusic').addEventListener('click', () => { AudioFX.init(); $('btnMusic').style.opacity = AudioFX.toggle() ? 1 : 0.4; });
+$('btnExit').addEventListener('click', () => { if (S.peer) { try { S.peer.destroy(); } catch (_) {} } location.href = location.pathname; });
+window.addEventListener('beforeunload', () => { if (S.peer) { try { S.peer.destroy(); } catch (_) {} } });
+
+// Si llega con enlace ?sala=CODIGO, se rellena el campo automáticamente
+(() => {
+  const sala = new URLSearchParams(location.search).get('sala');
+  if (sala) {
+    $('joinCode').value = sala.toUpperCase();
+    $('menuErr').textContent = 'Te invitaron a la sala ' + sala.toUpperCase() + '. Toca "Unirse".';
+  }
+})();
+</script>
+</body>
+</html>
