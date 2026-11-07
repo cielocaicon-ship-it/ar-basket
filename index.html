@@ -15,6 +15,10 @@ body{width:100%;height:100%;overflow:hidden;background:transparent;font-family:s
 #cam{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;background:#1a1d24}
 #gl{position:fixed;top:0;left:0;z-index:1}
 #touch{position:fixed;inset:0;z-index:5;touch-action:none}
+#joy{position:fixed;left:18px;bottom:calc(max(14px,env(safe-area-inset-bottom)) + 34px);width:118px;height:118px;border-radius:50%;background:rgba(0,0,0,.35);border:2px solid rgba(255,255,255,.45);z-index:8;touch-action:none}
+#joy::after{content:'CAMINAR';position:absolute;top:-18px;left:0;right:0;text-align:center;font-size:.62rem;font-weight:800;letter-spacing:1px;opacity:.85}
+#knob{position:absolute;left:34px;top:34px;width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.85);box-shadow:0 2px 8px rgba(0,0,0,.4);pointer-events:none}
+#steps{position:fixed;right:12px;bottom:calc(max(14px,env(safe-area-inset-bottom)) + 34px);z-index:8;font-size:.7rem;background:rgba(0,0,0,.55);padding:4px 8px;border-radius:8px;pointer-events:none}
 .screen{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;background:radial-gradient(circle at 50% 18%,#ff7a1a 0,#7a2a00 45%,#120700 100%);text-align:center;overflow-y:auto}
 .hidden{display:none!important}
 h1{font-size:2.5rem;letter-spacing:2px;text-shadow:0 4px 0 #000;line-height:1}
@@ -94,8 +98,10 @@ input{flex:1;min-width:0;padding:14px;border-radius:12px;border:2px solid rgba(2
 </div>
 <div id="msg" class="hidden"></div>
 <div id="toast"></div>
-<div id="hint" class="hidden">⬆️ Desliza hacia arriba para lanzar · 📱 gira el celular para mirar <small style="opacity:.6">· v5</small></div>
+<div id="hint" class="hidden">⬆️ Desliza hacia arriba para lanzar · 🚶 camina o usa el joystick <small style="opacity:.6">· v6</small></div>
 <div id="touch" class="hidden"></div>
+<div id="joy" class="hidden"><div id="knob"></div></div>
+<div id="steps" class="hidden">👣 Pasos: 0</div>
 
 <script>
 'use strict';
@@ -121,6 +127,10 @@ const CFG = {
   SWIPE_TOLERANCE: 0.25,          // margen de error de fuerza (0.25 = ±25%)
   AIM_TOLERANCE: 0.12,            // margen de error lateral
   SUBSTEPS: 4,                    // subpasos de física por frame
+  WALK_SPEED: 1.6,                // velocidad al caminar con el joystick (m/s)
+  STEP_LEN: 0.65,                 // metros que avanzas por cada paso real detectado
+  STEP_THRESHOLD: 2.2,            // sensibilidad del detector de pasos (más alto = menos sensible)
+  BOUNDS: { x: 4.6, zMin: -1.6, zMax: 8.2 }, // bordes de la cancha (unidades)
   THREE_PT_DIST: 3.0,             // distancia desde la que la canasta vale 3
   SPOTS: [                        // posiciones de tiro en la cancha
     { n: 'Centro', x: 0, z: 3.4 },
@@ -270,6 +280,16 @@ function halfCourtTexture() {
   g.fillText('AR BASKET', hx, H - 90);
   return tex(c);
 }
+function apronTexture() {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 512;
+  const g = c.getContext('2d');
+  g.fillStyle = '#9c6634'; g.fillRect(0, 0, 512, 512);
+  for (let x = 0; x < 512; x += 16) for (let y = -((x * 29) % 96); y < 512; y += 96) {
+    g.fillStyle = `rgba(${Math.random() < .5 ? '255,220,180' : '60,30,5'},${0.05 + Math.random() * 0.07})`; g.fillRect(x, y, 16, 96);
+    g.fillStyle = 'rgba(40,20,5,.3)'; g.fillRect(x, y, 16, 1); g.fillRect(x, 0, 1, 512);
+  }
+  const t = tex(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(3, 3); return t;
+}
 function boardTexture() {
   const c = document.createElement('canvas'); c.width = 280; c.height = 180;
   const g = c.getContext('2d');
@@ -306,7 +326,15 @@ function buildCourt() {
   const grp = new THREE.Group();
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(5, 6.5),
     new THREE.MeshStandardMaterial({ map: halfCourtTexture(), roughness: 0.55, metalness: 0.0 }));
-  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, 2.25); floor.receiveShadow = true; grp.add(floor);
+  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0.004, 2.25); floor.receiveShadow = true; grp.add(floor);
+  const Bd = CFG.BOUNDS, ow = Bd.x * 2 + 0.8, od = Bd.zMax - Bd.zMin + 0.8;
+  const outer = new THREE.Mesh(new THREE.PlaneGeometry(ow, od),
+    new THREE.MeshStandardMaterial({ map: apronTexture(), roughness: 0.6 }));
+  outer.rotation.x = -Math.PI / 2; outer.position.set(0, 0, (Bd.zMin + Bd.zMax) / 2); outer.receiveShadow = true; grp.add(outer);
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x1d4fb8, roughness: 0.8, transparent: true, opacity: 0.85 });
+  const wallH = 0.35, wallT = 0.08;
+  [[0, Bd.zMin - 0.4, ow, wallT], [0, Bd.zMax + 0.4, ow, wallT], [-Bd.x - 0.4, (Bd.zMin + Bd.zMax) / 2, wallT, od], [Bd.x + 0.4, (Bd.zMin + Bd.zMax) / 2, wallT, od]]
+    .forEach(([x, z, w, d]) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), wallMat); m.position.set(x, wallH / 2, z); m.receiveShadow = true; grp.add(m); });
 
   const metal = new THREE.MeshStandardMaterial({ color: 0x3a3f48, metalness: 0.7, roughness: 0.35 });
   const pad = new THREE.MeshStandardMaterial({ color: 0x1d4fb8, roughness: 0.8 });
@@ -437,6 +465,59 @@ function placeAtSpot(i) {
   if (B.state === 'flying') resetBall();
 }
 
+/* ===================== CAMINAR POR LA CANCHA ===================== */
+const Walk = { joyX: 0, joyY: 0, joyId: null, pending: 0, steps: 0, lastStep: 0, avg: 9.81, motionOn: false };
+// Mueve al jugador "metros" hacia donde mira el celular (fx, fz = adelante / derecha)
+function walk(forward, right) {
+  if (!forward && !right) return;
+  const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion); dir.y = 0;
+  if (dir.lengthSq() < 1e-4) dir.set(0, 0, -1);
+  dir.normalize();
+  const side = new THREE.Vector3(-dir.z, 0, dir.x);
+  const moveW = dir.multiplyScalar(forward).add(side.multiplyScalar(right));   // mundo
+  moveW.applyAxisAngle(new THREE.Vector3(0, 1, 0), -holder.rotation.y);      // espacio del holder
+  const old = courtRoot.position.clone();
+  courtRoot.position.sub(moveW);
+  courtRoot.updateMatrixWorld(true);
+  // ¿Quedó dentro de la cancha?
+  const me = court.worldToLocal(camera.getWorldPosition(new THREE.Vector3()));
+  const Bd = CFG.BOUNDS;
+  const cx = THREE.MathUtils.clamp(me.x, -Bd.x, Bd.x), cz = THREE.MathUtils.clamp(me.z, Bd.zMin, Bd.zMax);
+  const nearPole = Math.hypot(cx, cz - (CFG.BOARD.z - 0.45)) < 0.35;
+  if (nearPole) { courtRoot.position.copy(old); return; }
+  if (cx !== me.x || cz !== me.z) {
+    const fix = court.localToWorld(new THREE.Vector3(cx, me.y, cz)).sub(court.localToWorld(me.clone()));
+    fix.applyAxisAngle(new THREE.Vector3(0, 1, 0), -holder.rotation.y);
+    courtRoot.position.sub(fix);
+  }
+}
+// Detector de pasos con el acelerómetro
+function onMotion(e) {
+  const a = e.accelerationIncludingGravity;
+  if (!a || a.x == null) return;
+  const m = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+  Walk.avg += (m - Walk.avg) * 0.05;
+  const now = performance.now();
+  if (!input.down && m - Walk.avg > CFG.STEP_THRESHOLD && now - Walk.lastStep > 330) {
+    Walk.lastStep = now; Walk.steps++; Walk.pending += CFG.STEP_LEN;
+    $('steps').textContent = '👣 Pasos: ' + Walk.steps;
+  }
+}
+function bindJoystick() {
+  const j = $('joy'), k = $('knob'), R = 44;
+  const set = (x, y) => { Walk.joyX = x; Walk.joyY = y; k.style.left = (34 + x * R) + 'px'; k.style.top = (34 + y * R) + 'px'; };
+  const move = e => {
+    const r = j.getBoundingClientRect();
+    let x = (e.clientX - r.left - r.width / 2) / R, y = (e.clientY - r.top - r.height / 2) / R;
+    const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; }
+    set(x, y);
+  };
+  j.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); Walk.joyId = e.pointerId; try { j.setPointerCapture(e.pointerId); } catch (_) {} move(e); });
+  j.addEventListener('pointermove', e => { if (Walk.joyId === e.pointerId) { e.preventDefault(); move(e); } });
+  const end = e => { if (Walk.joyId === e.pointerId) { Walk.joyId = null; set(0, 0); } };
+  j.addEventListener('pointerup', end); j.addEventListener('pointercancel', end);
+}
+
 /* ===================== CÁMARA DEL CELULAR ===================== */
 function startCamera() {
   const v = $('cam');
@@ -455,11 +536,17 @@ function kickVideo() { const v = $('cam'); if (v.srcObject && v.paused) { const 
 /* ===================== GIROSCOPIO (mirar alrededor) ===================== */
 function requestMotion() {
   try {
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+      DeviceMotionEvent.requestPermission().then(r => { if (r === 'granted') listenMotion(); }).catch(() => {});
+    } else listenMotion();
+  } catch (_) {}
+  try {
     if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
       DeviceOrientationEvent.requestPermission().then(r => { if (r === 'granted') listenGyro(); }).catch(() => {});
     } else listenGyro();
   } catch (_) {}
 }
+function listenMotion() { if (Walk.motionOn) return; Walk.motionOn = true; window.addEventListener('devicemotion', onMotion); }
 function listenGyro() {
   if (Gyro.on) return;
   Gyro.on = true;
@@ -538,7 +625,24 @@ function stepBall(h) {
     }
   }
 
-  // 5) Piso de la cancha
+  // 5) Poste (cilindro) para que el balón no lo atraviese
+  const pz = CFG.BOARD.z - 0.45, pr = 0.11 + r;
+  const ddx = p.x, ddz = p.z - pz, dd = Math.hypot(ddx, ddz);
+  if (p.y < CFG.BOARD.y && dd < pr && dd > 1e-6) {
+    const ux = ddx / dd, uz = ddz / dd;
+    p.x = ux * pr; p.z = pz + uz * pr;
+    const vn = v.x * ux + v.z * uz;
+    if (vn < 0) { v.x -= 1.5 * vn * ux; v.z -= 1.5 * vn * uz; playSnd(AudioFX.board); }
+  }
+
+  // 6) Bordes de la cancha: el balón rebota y no se sale
+  const Bd = CFG.BOUNDS;
+  if (p.x < -Bd.x - 0.4 + r) { p.x = -Bd.x - 0.4 + r; if (v.x < 0) v.x = -v.x * 0.5; }
+  if (p.x > Bd.x + 0.4 - r) { p.x = Bd.x + 0.4 - r; if (v.x > 0) v.x = -v.x * 0.5; }
+  if (p.z < Bd.zMin - 0.4 + r) { p.z = Bd.zMin - 0.4 + r; if (v.z < 0) v.z = -v.z * 0.5; }
+  if (p.z > Bd.zMax + 0.4 - r) { p.z = Bd.zMax + 0.4 - r; if (v.z > 0) v.z = -v.z * 0.5; }
+
+  // 7) Piso de la cancha (nunca lo atraviesa)
   if (p.y < r) {
     p.y = r;
     if (v.y < 0) {
@@ -596,7 +700,6 @@ function calcVelocity(start, speed, lat) {
 }
 function throwBall(speed, lat) {
   if (B.state !== 'held') return;
-  if (rimSide() !== 0) { flashMsg('Primero apunta el celular hacia el aro 🏀'); return; }
   const start = heldStartLocal();
   const r = calcVelocity(start, speed, lat);
   B.pos.copy(start); B.vel.copy(r.v);
@@ -616,7 +719,7 @@ function currentSwipe() {
 }
 // Guía de tiro: puntos de la trayectoria y anillo en el aro
 function updateAim(t) {
-  const show = B.state === 'held' && rimSide() === 0;
+  const show = B.state === 'held';
   aimRing.visible = B.state === 'held';
   aimRing.scale.setScalar(1 + Math.sin(t * 6) * 0.08);
   const h = $('hint');
@@ -630,7 +733,8 @@ function updateAim(t) {
   const p = start.clone(), v = r.v.clone(), stepT = 0.05;
   aimDots.forEach((d, i) => {
     for (let k = 0; k < 2; k++) { v.y -= CFG.G * stepT / 2; p.addScaledVector(v, stepT / 2); }
-    d.visible = p.y > 0 && i > 0;
+    if (p.y < CFG.BALL_R) { p.y = CFG.BALL_R; v.set(0, 0, 0); }
+    d.visible = i > 0 && v.lengthSq() > 0;
     d.position.copy(p);
     d.material.color.setHex(col);
     d.material.opacity = sw ? 0.9 : 0.45;
@@ -776,6 +880,10 @@ function update(dt) {
     camera.rotation.set(0.12, 0, 0);
   }
 
+  // Caminar: pasos reales (suave) + joystick
+  if (Walk.pending > 0) { const st = Math.min(Walk.pending, dt * 2.2); Walk.pending -= st; walk(st, 0); }
+  if (Walk.joyX || Walk.joyY) walk(-Walk.joyY * CFG.WALK_SPEED * dt, Walk.joyX * CFG.WALK_SPEED * dt);
+
   // Mano: sigue el eje X del dedo (pegada a la cámara)
   input.ndcX += (input.targetX - input.ndcX) * Math.min(1, dt * 14);
   const d = CFG.HAND_DIST, hh = Math.tan(THREE.MathUtils.degToRad(CFG.FOV / 2)) * d;
@@ -790,7 +898,8 @@ function update(dt) {
     for (let i = 0; i < CFG.SUBSTEPS; i++) stepBall(h);
     B.t += dt;
     const sp = B.vel.length();
-    if (!B.endT && (B.t > 4.5 || (B.pos.y <= CFG.BALL_R + 0.001 && sp < 0.4) || B.pos.length() > 25)) B.endT = B.t + 0.5;
+    if (!B.endT && (B.t > 4.5 || (B.pos.y <= CFG.BALL_R + 0.001 && sp < 0.4) || B.pos.length() > 40)) B.endT = B.t + 0.5;
+    if (B.pos.y < CFG.BALL_R) { B.pos.y = CFG.BALL_R; if (B.vel.y < 0) B.vel.y = 0; }
     if (B.endT && B.t > B.endT) resetBall();
     ball.position.copy(B.pos);
     ball.rotation.x -= B.vel.z * dt * 5;
@@ -839,7 +948,8 @@ function startGame() {
   $('hint').dataset.base = $('hint').innerHTML;
   if (S.mode === 'online') $('rvBox').classList.remove('hidden');
   else setNet('Modo solo');
-  init3D(); startCamera(); bindTouch(); updateHUD();
+  init3D(); startCamera(); bindTouch(); bindJoystick(); updateHUD();
+  $('joy').classList.remove('hidden'); $('steps').classList.remove('hidden');
   requestAnimationFrame(t => { lastTime = t; loop(t); });
 }
 
