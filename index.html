@@ -95,7 +95,7 @@ input{flex:1;min-width:0;padding:14px;border-radius:12px;border:2px solid rgba(2
 </div>
 <div id="msg" class="hidden"></div>
 <div id="toast"></div>
-<div id="hint" class="hidden">✋ Lanza con tu mano frente a la cámara · 👆 o desliza el dedo <small style="opacity:.6">· v12</small></div>
+<div id="hint" class="hidden">✋ Lanza con tu mano frente a la cámara · 👆 o desliza el dedo <small style="opacity:.6">· v13</small></div>
 <div id="touch" class="hidden"></div>
 <div id="steps" class="hidden">📡 Preparando…</div>
 
@@ -113,9 +113,9 @@ const CFG = {
   G: 9.8,                         // gravedad
   BALL_R: 0.1,                    // radio del balón (0.15 m)
   RIM: { x: 0, y: 2.0, z: -0.35 },// centro del aro
-  RIM_R: 0.22,                    // radio del aro
+  RIM_R: 0.3,                     // radio del aro (grande para encestar fácil)
   RIM_TUBE: 0.022,                // grosor del aro
-  BOARD: { x: 0, y: 2.3, z: -0.75, w: 1.4, h: 0.9, d: 0.05 }, // tablero
+  BOARD: { x: 0, y: 2.4, z: -0.75, w: 1.9, h: 1.2, d: 0.05 }, // tablero (grande)
   HAND_DIST: 0.8,                 // distancia de la mano a la cámara (metros)
   HAND_SCALE: 0.4,                // tamaño de la mano (pequeña y cerca = no se entierra)
   HAND_NDC_Y: -0.68,              // altura de la mano en pantalla (-1 abajo, 1 arriba)
@@ -125,7 +125,8 @@ const CFG = {
   HAND_TRACK: true,               // detectar tu mano real con la cámara (MediaPipe)
   HAND_THROW_MIN: 1.0,            // qué tan rápido debes subir la mano para lanzar (pantallas/seg)
   HAND_POWER: 0.8,                // fuerza del lanzamiento con la mano
-  HAND_TOLERANCE: 0.45,           // ayuda al apuntar con la mano (más alto = más fácil)
+  HAND_TOLERANCE: 0.7,            // ayuda al apuntar con la mano (más alto = más fácil)
+  SHOW_FLOOR: false,              // false = sin piso: solo el aro sobre tu entorno real
   AIM_TOLERANCE: 0.12,            // margen de error lateral
   SUBSTEPS: 4,                    // subpasos de física por frame
   STEP_LEN: 0.65,                 // metros que avanzas por cada paso real detectado
@@ -168,7 +169,7 @@ const input = { down: false, samples: [], ndcX: 0, targetX: 0, flick: 0 };
 const Gyro = { on: false, has: false, a: 0, b: 0, g: 0, orient: 0, needCenter: false };
 
 let renderer, scene, camera, holder, courtRoot, court;
-let avatar, myHand, heldBall, ball, oppHand, oppBall, net, netAnim = 0, lastTime = 0, aimDots = [], aimRing;
+let fire = [], fireIdx = 0, avatar, myHand, heldBall, ball, oppHand, oppBall, net, netAnim = 0, lastTime = 0, aimDots = [], aimRing;
 const tmpV = new THREE.Vector3(), tmpW = new THREE.Vector3();
 
 /* ===================== AUDIO (Web Audio API) ===================== */
@@ -392,11 +393,12 @@ function buildCourt() {
   const half = new THREE.Group(); grp.add(half);
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(5, 6.5),
     new THREE.MeshStandardMaterial({ map: halfCourtTexture(), roughness: 0.55, metalness: 0.0 }));
-  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0.004, 2.25); floor.receiveShadow = true; half.add(floor);
+  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0.004, 2.25); floor.receiveShadow = true; floor.visible = CFG.SHOW_FLOOR; half.add(floor);
   const Bd = CFG.BOUNDS, ow = Bd.x * 2 + 0.8, od = Bd.zMax - Bd.zMin + 0.8;
   const outer = new THREE.Mesh(new THREE.PlaneGeometry(ow, od),
     new THREE.MeshStandardMaterial({ map: apronTexture(), roughness: 0.5, transparent: true }));
   outer.rotation.x = -Math.PI / 2; outer.position.set(0, 0, (Bd.zMin + Bd.zMax) / 2); outer.receiveShadow = true; grp.add(outer);
+  if (!CFG.SHOW_FLOOR) outer.material = new THREE.ShadowMaterial({ opacity: 0.3 });   // solo la sombra sobre el piso real
 
 
   const metal = new THREE.MeshStandardMaterial({ color: 0x3a3f48, metalness: 0.7, roughness: 0.35 });
@@ -492,6 +494,16 @@ function init3D() {
   const rvBallMat = new THREE.MeshStandardMaterial({ map: ballTexture('#2f7be8'), bumpMap: bump, bumpScale: 0.004, roughness: 0.62 });
 
   ball = new THREE.Mesh(ballGeo, myBallMat); ball.visible = false; ball.castShadow = true; court.add(ball);
+  // Estela de fuego del balón
+  const fc = document.createElement('canvas'); fc.width = fc.height = 64;
+  const fg = fc.getContext('2d'), gr = fg.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,220,1)'); gr.addColorStop(0.25, 'rgba(255,200,60,.95)'); gr.addColorStop(0.6, 'rgba(255,80,0,.55)'); gr.addColorStop(1, 'rgba(255,0,0,0)');
+  fg.fillStyle = gr; fg.fillRect(0, 0, 64, 64);
+  const fireTex = new THREE.CanvasTexture(fc);
+  for (let i = 0; i < 48; i++) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireTex, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }));
+    sp.visible = false; sp.userData.life = 0; court.add(sp); fire.push(sp);
+  }
 
   const dotGeo = new THREE.SphereGeometry(0.025, 8, 6);
   for (let i = 0; i < 26; i++) {
@@ -679,7 +691,8 @@ function handStep(now) {
       const dy = (a.y - b.y) / H, dx = (b.x - a.x) / W, vy = dy / dt;
       if (dy > 0.08 && vy > CFG.HAND_THROW_MIN) {
         HT.cool = now + 900; HT.hist.length = 0;
-        throwBall(vy * CFG.HAND_POWER, dx / dy, CFG.HAND_TOLERANCE);
+        throwBall(vy * CFG.HAND_POWER, 0, CFG.HAND_TOLERANCE);   // con la mano el tiro va derecho al aro
+        HT.fire = true;
       }
     }
   }
@@ -1179,11 +1192,11 @@ function update(dt) {
     // El balón se pone sobre tu palma real, del tamaño que se ve tu mano
     const H2 = window.innerHeight / 2;
     const nx = HT.palm.x / window.innerWidth * 2 - 1, ny = 1 - HT.palm.y / H2;
-    const rPx = THREE.MathUtils.clamp(HT.size * 1.1, 25, H2 * 0.45);
+    const rPx = THREE.MathUtils.clamp(HT.size * 0.5, 16, window.innerWidth * 0.09);   // balón pequeño: no tapa el aro
     const target = THREE.MathUtils.clamp(rPx / H2 * hh / (CFG.BALL_R * CFG.SCALE), 0.12, 1.4);
     myHand.scale.setScalar(myHand.scale.x + (target - myHand.scale.x) * 0.5);
     const k = myHand.scale.x, bp = heldBall.position;
-    const by = ny + rPx / H2 * 0.7;                       // un poco arriba de la palma
+    const by = ny + rPx / H2 * 1.1;                       // sobre la punta de los dedos
     myHand.rotation.set(0, 0, 0);
     myHand.position.set(nx * hh * camera.aspect - bp.x * k, by * hh - bp.y * k, -d - bp.z * k);
   } else {
@@ -1208,7 +1221,20 @@ function update(dt) {
     ball.scale.setScalar(B.s0 + (1 - B.s0) * Math.min(1, B.t / 0.3));
     ball.rotation.x -= B.vel.z * dt * 5;
     ball.rotation.z += B.vel.x * dt * 5;
+    // Estela de fuego mientras vuela
+    if (B.t < 2.2 && !B.endT) for (let k = 0; k < 2; k++) {
+      const f = fire[fireIdx++ % fire.length];
+      f.position.copy(B.pos).add(new THREE.Vector3((Math.random() - .5) * .08, (Math.random() - .5) * .08, (Math.random() - .5) * .08));
+      f.userData.life = 1; f.visible = true;
+    }
   }
+
+  fire.forEach(f => {
+    if (!f.visible) return;
+    f.userData.life -= dt * 2.6;
+    if (f.userData.life <= 0) { f.visible = false; return; }
+    const l = f.userData.life; f.scale.setScalar(0.12 + (1 - l) * 0.35); f.material.opacity = l; f.position.y += dt * 0.25;
+  });
 
   // Animación de la red
   if (netAnim > 0) { netAnim = Math.max(0, netAnim - dt * 2.5); nets[S.netIdx || 0].scale.set(1 - netAnim * 0.15, 1 + Math.sin(netAnim * Math.PI) * 0.45, 1 - netAnim * 0.15); }
