@@ -123,7 +123,7 @@ input{flex:1;min-width:0;padding:14px;border-radius:12px;border:2px solid rgba(2
   <button class="btn" id="btnAgain">🔁 Jugar otra vez</button>
   <button class="btn ghost" id="btnMenu">🏠 Menú</button>
 </div>
-<div id="hint" class="hidden">✊ agarrar · ⬇️ rebotar (3 = Ritual) · ⬆️ lanzar <small style="opacity:.6">· v17</small></div>
+<div id="hint" class="hidden">✊ agarrar · ⬇️ rebotar (3 = Ritual) · ⬆️ lanzar <small style="opacity:.6">· v18</small></div>
 <canvas id="occ"></canvas>
 <div id="touch" class="hidden"></div>
 <div id="steps" class="hidden">📡 Preparando…</div>
@@ -155,6 +155,7 @@ const CFG = {
   HAND_THROW_MIN: 1.0,            // qué tan rápido debes subir la mano para lanzar (pantallas/seg)
   HAND_POWER: 0.8,                // fuerza del lanzamiento con la mano
   HAND_TOLERANCE: 0.7,            // ayuda al apuntar con la mano (más alto = más fácil)
+  SHOW_SKELETON: false,           // true = dibuja los puntos/líneas de la mano
   SHOW_FLOOR: false,              // false = sin piso: solo el aro sobre tu entorno real
   AIM_TOLERANCE: 0.12,            // margen de error lateral
   SUBSTEPS: 4,                    // subpasos de física por frame
@@ -798,6 +799,13 @@ function handStep(now) {
   HT.pts = L.map((_, i) => sp(i));
   // ¿Mano cerrada? (puntas de los dedos cerca de la muñeca = agarrar)
   const pd = (i, j) => Math.hypot(HT.pts[i].x - HT.pts[j].x, HT.pts[i].y - HT.pts[j].y);
+  // ¿Ves el dorso o la palma? (con la cámara trasera la etiqueta Left/Right de MediaPipe sale al revés)
+  const hd = (res.handedness || res.handednesses || [])[0];
+  const label = hd && hd[0] ? hd[0].categoryName : 'Left';
+  const a5 = { x: HT.pts[5].x - HT.pts[0].x, y: HT.pts[5].y - HT.pts[0].y }, a17 = { x: HT.pts[17].x - HT.pts[0].x, y: HT.pts[17].y - HT.pts[0].y };
+  const cross = a5.x * a17.y - a5.y * a17.x;
+  HT.back = label === 'Left' ? cross > 0 : cross < 0;     // true = ves el dorso: el balón queda DETRÁS de tu mano
+  HT.dir = { x: (HT.pts[9].x - HT.pts[0].x) / (HT.size || 1), y: (HT.pts[9].y - HT.pts[0].y) / (HT.size || 1) };
   HT.fist = ([8, 12, 16, 20].reduce((a, i) => a + pd(i, 0), 0) / 4) < pd(0, 9) * 1.25;
   setTrack(B.state === 'held' ? '✋ Sube la mano rápido = lanzar · bájala = rebotar' : B.state === 'free' ? '✊ Cierra la mano o acércala para agarrar el balón' : B.state === 'dribble' ? '🏀 ¡Rebotando!' : '🏀 ¡Lanzado!');
   // Gesto de lanzamiento: la mano sube rápido
@@ -1088,7 +1096,7 @@ function resetBall() {
   if (B.state === 'flying') afterShot();
   // Con la mano real, el balón aparece flotando para que lo agarres
   B.state = (HT.on && performance.now() - HT.seen < 4000) ? 'free' : 'held';
-  ball.visible = false; heldBall.visible = true; B.freeT = 0;
+  ball.visible = false; heldBall.visible = true; B.freeT = 0; B.magnet = 0;
 }
 
 /* ===================== LANZAMIENTO (FLICK) ===================== */
@@ -1376,7 +1384,12 @@ function update(dt) {
     if (realHand) {
       const bx = window.innerWidth / 2, byy = H2 * (1 - fy);
       const near = Math.hypot(HT.palm.x - bx, HT.palm.y - byy);
-      if (near < window.innerWidth * 0.3 || HT.fist) {
+      B.magnet = Math.min(1, (B.magnet || 0) + dt * 1.6);   // el balón va solo hacia tu mano
+      const mx = (HT.palm.x / window.innerWidth * 2 - 1), my = 1 - HT.palm.y / H2;
+      myHand.position.x += (mx * hh * camera.aspect - bp.x * k - myHand.position.x) * B.magnet;
+      myHand.position.y += (my * hh - bp.y * k - myHand.position.y) * B.magnet;
+      if (near < window.innerWidth * 0.3 || HT.fist || B.magnet >= 1) {
+        B.magnet = 0;
         B.state = 'held'; HT.cool = performance.now() + 500; HT.hist.length = 0;
         if (AudioFX.ctx) { AudioFX.tone('triangle', 520, AudioFX.now(), 0.12, 0.3); AudioFX.bounce(0.4); }
       }
@@ -1384,12 +1397,14 @@ function update(dt) {
   } else if (realHand) {
     // El balón se pone sobre tu palma real, del tamaño que se ve tu mano
     const H2 = window.innerHeight / 2;
-    const nx = HT.palm.x / window.innerWidth * 2 - 1, ny = 1 - HT.palm.y / H2;
-    const rPx = THREE.MathUtils.clamp(HT.size * 0.5, 16, window.innerWidth * 0.09);   // balón pequeño: no tapa el aro
+    const rPx = THREE.MathUtils.clamp(HT.size * 0.8, 18, window.innerWidth * 0.16);   // tamaño real respecto a tu mano
+    const dir = HT.dir || { x: 0, y: -1 };
+    const cx = HT.palm.x + dir.x * HT.size * 0.35, cy = HT.palm.y + dir.y * HT.size * 0.35;   // entre la palma y los dedos
+    const nx = cx / window.innerWidth * 2 - 1, ny = 1 - cy / H2;
     const target = THREE.MathUtils.clamp(rPx / H2 * hh / (CFG.BALL_R * CFG.SCALE), 0.12, 1.4);
     myHand.scale.setScalar(myHand.scale.x + (target - myHand.scale.x) * 0.5);
     const k = myHand.scale.x, bp = heldBall.position;
-    const by = ny + rPx / H2 * 0.35;                      // en el centro de la palma
+    const by = ny;
     myHand.rotation.set(0, 0, 0);
     myHand.position.set(nx * hh * camera.aspect - bp.x * k, by * hh - bp.y * k, -d - bp.z * k);
   } else {
@@ -1505,7 +1520,7 @@ function drawHandOcclusion() {
   c.globalAlpha = 1;
   c.globalCompositeOperation = 'destination-in'; c.drawImage(OCC.mask, 0, 0);
   // 3) El balón que sostienes queda delante de tu mano
-  if (heldBall.visible && (B.state === 'held' || B.state === 'free')) {
+  if (heldBall.visible && (B.state === 'free' || (B.state === 'held' && !HT.back))) {
     const wp = heldBall.getWorldPosition(new THREE.Vector3()).project(camera);
     const r = heldBall.geometry.parameters.radius * myHand.scale.x / (Math.tan(THREE.MathUtils.degToRad(CFG.FOV / 2)) * CFG.HAND_DIST) * H / 2;
     c.globalCompositeOperation = 'destination-out';
@@ -1516,7 +1531,7 @@ function drawHandOcclusion() {
 }
 // Articulaciones brillantes: turquesa = abierta, rosado = cerrada, dorado = sosteniendo el balón
 function drawSkeleton(c) {
-  const P = HT.pts; if (!P) return;
+  const P = HT.pts; if (!P || !CFG.SHOW_SKELETON) return;
   const col = B.state === 'held' ? '#ffd84a' : HT.fist ? '#ff5fb0' : '#3de8e0';
   c.save();
   c.strokeStyle = col; c.globalAlpha = 0.55; c.lineWidth = 2; c.shadowColor = col; c.shadowBlur = 8;
