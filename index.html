@@ -96,7 +96,7 @@ input{flex:1;min-width:0;padding:14px;border-radius:12px;border:2px solid rgba(2
 </div>
 <div id="msg" class="hidden"></div>
 <div id="toast"></div>
-<div id="hint" class="hidden">✋ Agarra · bájala = rebotar · súbela = lanzar <small style="opacity:.6">· v14</small></div>
+<div id="hint" class="hidden">✋ Agarra · bájala = rebotar · súbela = lanzar <small style="opacity:.6">· v15</small></div>
 <canvas id="occ"></canvas>
 <div id="touch" class="hidden"></div>
 <div id="steps" class="hidden">📡 Preparando…</div>
@@ -109,7 +109,7 @@ input{flex:1;min-width:0;padding:14px;border-radius:12px;border:2px solid rgba(2
    ========================================================= */
 const CFG = {
   PEER_PREFIX: 'arbasket-usb-',
-  SCALE: 1.5,                     // 1 unidad = 1.5 m (aro a 3 m de altura)
+  SCALE: 2.0,                     // 1 unidad = 2 m (aro grande, como cancha profesional)
   EYE: 1.5,                       // altura del celular sobre el piso (metros)
   FOV: 70,                        // campo de visión de la cámara del celular
   G: 9.8,                         // gravedad
@@ -140,13 +140,13 @@ const CFG = {
   POLE_CLEAR: 0.75,               // distancia mínima al poste (unidades) para no quedar encima
   THREE_PT_DIST: 3.0,             // distancia desde la que la canasta vale 3
   SPOTS: [                        // posiciones de tiro en la cancha
-    { n: 'Centro', x: 0, z: 3.6 },
+    { n: 'Centro', x: 0, z: 4.6 },
     { n: 'Izquierda', x: -2.0, z: 2.4 },
     { n: 'Derecha', x: 2.0, z: 2.4 },
     { n: 'Esquina', x: -2.3, z: 1.2 },
     { n: 'Triple', x: 0, z: 4.9 },
-    { n: 'Online A', x: -1.6, z: 3.6 },   // anfitrión
-    { n: 'Online B', x: 1.6, z: 3.6 }     // invitado
+    { n: 'Online A', x: -1.6, z: 4.6 },   // anfitrión
+    { n: 'Online B', x: 1.6, z: 4.6 }     // invitado
   ]
 };
 
@@ -458,7 +458,7 @@ function buildCourt() {
   sun.target.position.set(0, 0, CFG.MID);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048); sun.shadow.radius = 4;
-  const sc = sun.shadow.camera; sc.left = -13; sc.right = 13; sc.top = 13; sc.bottom = -13; sc.near = 0.5; sc.far = 40;
+  const sc = sun.shadow.camera; sc.left = -17; sc.right = 17; sc.top = 17; sc.bottom = -17; sc.near = 0.5; sc.far = 50;
   sun.shadow.bias = -0.0008;
   grp.add(sun); grp.add(sun.target);
   return grp;
@@ -482,6 +482,7 @@ function init3D() {
   scene.add(camera);
   scene.add(new THREE.HemisphereLight(0xffffff, 0x8a6a4a, 0.4));
   makeEnvironment();
+  scene.fog = new THREE.Fog(0xd9dee4, 14, 70);   // un poco de bruma: da sensación de distancia real
 
 
   holder = new THREE.Group(); scene.add(holder);          // giro para "centrar aro"
@@ -970,7 +971,7 @@ function updateDribble(dt) {
     B.up = true; AudioFX.bounce(0.9);
   }
   if (B.up && (B.pos.y >= tgt.y - 0.05 || B.vel.y <= 0)) {   // vuelve a tu mano
-    B.up = false;
+    B.up = false; HT.cool = performance.now() + 600; HT.hist.length = 0;   // no lanzar sin querer al recibirlo
     B.state = 'held'; ball.visible = false; heldBall.visible = true;
     if (AudioFX.ctx) AudioFX.tone('sine', 220, AudioFX.now(), 0.08, 0.3);
   }
