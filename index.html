@@ -45,7 +45,19 @@ input{flex:1;min-width:0;padding:14px;border-radius:12px;border:2px solid rgba(2
 #btnSpot{background:#2a7fff;border-color:#2a7fff}
 #net{font-size:.7rem;background:rgba(0,0,0,.55);padding:3px 8px;border-radius:8px;max-width:160px;text-align:center}
 #msg{position:fixed;left:50%;top:44%;transform:translate(-50%,-50%);z-index:9;background:rgba(0,0,0,.7);padding:12px 18px;border-radius:12px;max-width:85%;text-align:center;pointer-events:none;font-size:.95rem;line-height:1.35}
-#toast{position:fixed;left:50%;top:27%;transform:translate(-50%,-50%) scale(.6);z-index:11;font-size:2.3rem;font-weight:900;color:#ffd84a;text-shadow:0 4px 0 #000,0 0 22px #ff7a1a;opacity:0;transition:all .25s;pointer-events:none;white-space:nowrap}
+#sub{position:fixed;left:50%;top:25%;transform:translate(-50%,-50%);z-index:11;font-size:1.05rem;font-weight:800;color:#fff;text-shadow:0 2px 6px #000;opacity:0;transition:opacity .25s;pointer-events:none;text-align:center;white-space:pre-line}
+#sub.show{opacity:1}
+#meter{position:fixed;right:12px;top:50%;transform:translateY(-50%);width:18px;height:200px;border-radius:10px;z-index:9;pointer-events:none;background:linear-gradient(#ff3b3b 0 22%,#3dff7a 22% 46%,#ffc23d 46% 100%);border:2px solid rgba(255,255,255,.7);opacity:0;transition:opacity .2s}
+#meter.show{opacity:.95}
+#meter i{position:absolute;left:-7px;right:-7px;height:5px;background:#fff;border-radius:3px;box-shadow:0 0 8px #fff}
+#meter b{position:absolute;right:26px;top:50%;transform:translateY(-50%);font-size:.75rem;white-space:nowrap;text-shadow:0 1px 3px #000}
+#extra{font-size:.68rem;opacity:.95;margin-top:2px}
+#fireTag{color:#ffb020;font-weight:900;text-shadow:0 0 8px #ff4500}
+.chips{display:flex;gap:6px;width:100%;max-width:320px}
+.chip{flex:1;padding:9px 4px;border-radius:10px;border:2px solid rgba(255,255,255,.4);background:rgba(0,0,0,.35);color:#fff;font-weight:800;font-size:.8rem}
+.chip.on{background:#ffd84a;color:#3a1600;border-color:#ffd84a}
+#results .stat{font-size:1rem;line-height:1.7}
+#toast{position:fixed;left:50%;top:18%;transform:translate(-50%,-50%) scale(.6);z-index:11;font-size:2.3rem;font-weight:900;color:#ffd84a;text-shadow:0 4px 0 #000,0 0 22px #ff7a1a;opacity:0;transition:all .25s;pointer-events:none;white-space:nowrap}
 #toast.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
 #hint{position:fixed;bottom:max(14px,env(safe-area-inset-bottom));left:0;right:0;text-align:center;z-index:9;font-size:.85rem;opacity:.95;pointer-events:none;text-shadow:0 2px 4px #000}
 </style>
@@ -57,6 +69,11 @@ input{flex:1;min-width:0;padding:14px;border-radius:12px;border:2px solid rgba(2
 <div id="menu" class="screen">
   <h1>AR <span>BASKET</span></h1>
   <p class="sub">Baloncesto en realidad aumentada. La cancha aparece en tu cámara: <b>mueve y gira el celular</b> para mirar alrededor, como con unas gafas de realidad virtual.</p>
+  <div class="chips" id="modes">
+    <button class="chip on" data-m="practica">Práctica</button>
+    <button class="chip" data-m="clasico">Clásico · 10</button>
+    <button class="chip" data-m="reloj">60 seg</button>
+  </div>
   <button class="btn" id="btnSolo">🏀 Modo Solo</button>
   <button class="btn alt" id="btnCreate">🌐 Crear Partida Online</button>
   <div class="row">
@@ -82,7 +99,7 @@ input{flex:1;min-width:0;padding:14px;border-radius:12px;border:2px solid rgba(2
 
 <!-- ===== HUD EN JUEGO ===== -->
 <div id="hud" class="hidden">
-  <div class="score" id="meBox"><small>TÚ</small><b id="myScore">0</b><small id="shots">Tiros: 0</small></div>
+  <div class="score" id="meBox"><small>TÚ</small><b id="myScore">0</b><small id="shots">Tiros: 0</small><div id="extra"></div></div>
   <div class="mid">
     <div class="tools">
       <button class="ic" id="btnMusic" title="Música">🎵</button>
@@ -96,7 +113,17 @@ input{flex:1;min-width:0;padding:14px;border-radius:12px;border:2px solid rgba(2
 </div>
 <div id="msg" class="hidden"></div>
 <div id="toast"></div>
-<div id="hint" class="hidden">✊ Cierra la mano = agarrar · bájala = rebotar · súbela = lanzar <small style="opacity:.6">· v16</small></div>
+<div id="sub"></div>
+<div id="meter"><i id="meterBar"></i><b id="meterTxt"></b></div>
+<div id="results" class="screen hidden">
+  <h1>FIN DEL <span>JUEGO</span></h1>
+  <div class="code" id="resPts">0</div>
+  <div class="stat" id="resStats"></div>
+  <p class="err" id="resRecord"></p>
+  <button class="btn" id="btnAgain">🔁 Jugar otra vez</button>
+  <button class="btn ghost" id="btnMenu">🏠 Menú</button>
+</div>
+<div id="hint" class="hidden">✊ agarrar · ⬇️ rebotar (3 = Ritual) · ⬆️ lanzar <small style="opacity:.6">· v17</small></div>
 <canvas id="occ"></canvas>
 <div id="touch" class="hidden"></div>
 <div id="steps" class="hidden">📡 Preparando…</div>
@@ -161,7 +188,7 @@ function mirror(i, v, isVel) { if (i === 1) { v.x = -v.x; v.z = isVel ? -v.z : 2
 /* ===================== ESTADO ===================== */
 const S = {
   mode: 'solo', isHost: false, started: false, track: 'gyro', xrSupported: false, xrPlaced: false, floorY: -1.5, camOk: false, camErr: false, spot: 0,
-  score: 0, shots: 0, rivalScore: 0, rivalShots: 0,
+  score: 0, shots: 0, made: 0, streak: 0, bestStreak: 0, swishes: 0, game: 'practica', timeLeft: 60, over: false, rivalScore: 0, rivalShots: 0,
   peer: null, conn: null, code: '', link: '',
   remote: { b: new THREE.Vector3(), h: new THREE.Vector3(), p: new THREE.Vector3(), yaw: 0, last: 0, has: false, snap: false },
   msgUntil: 0
@@ -239,6 +266,22 @@ const AudioFX = {
   board() { if (!this.ctx) return; const t = this.now(); this.noiseHit(t, 0.12, 0.6, 'lowpass', 900); this.tone('sine', 95, t, 0.15, 0.5); },
   swish() { if (!this.ctx) return; this.noiseHit(this.now(), 0.4, 0.5, 'bandpass', 3200, null, 900); },
   whoosh() { if (!this.ctx) return; this.noiseHit(this.now(), 0.25, 0.3, 'highpass', 600, null, 3000); },
+  horn() { if (!this.ctx) return; const t = this.now(); [0, 0.25].forEach(d => { this.tone('sawtooth', 233, t + d, 0.22, 0.25); this.tone('sawtooth', 311, t + d, 0.22, 0.2); }); },
+  cheer() {   // ovación del público
+    if (!this.ctx) return; const t = this.now();
+    this.noiseHit(t, 2.2, 0.35, 'bandpass', 1100, null, 700);
+    for (let i = 0; i < 14; i++) this.noiseHit(t + Math.random() * 1.4, 0.05, 0.25, 'highpass', 2500);
+  },
+  aww() {     // "awww" del público
+    if (!this.ctx) return; const t = this.now();
+    [0, 3, 7].forEach(n => this.tone('triangle', this.hz(57 + n), t, 1.0, 0.07, null, this.hz(50 + n)));
+    this.noiseHit(t, 1.0, 0.12, 'lowpass', 900, null, 300);
+  },
+  boom() {    // fuego artificial
+    if (!this.ctx) return; const t = this.now();
+    this.noiseHit(t, 0.6, 0.6, 'lowpass', 500, null, 80); this.tone('sine', 90, t, 0.4, 0.5, null, 35);
+    for (let i = 0; i < 10; i++) this.noiseHit(t + 0.15 + Math.random() * 0.6, 0.03, 0.15, 'highpass', 4000);
+  },
   score(rival) {
     if (!this.ctx) return;
     const t = this.now(), base = rival ? 60 : 72;
@@ -464,6 +507,73 @@ function buildCourt() {
   return grp;
 }
 
+/* ===================== FUEGOS ARTIFICIALES Y LLAMAS ===================== */
+const PN = 700;
+const PS = { pos: null, col: null, vel: [], life: new Float32Array(PN), base: [], geo: null, idx: 0, rockets: [] };
+function initParticles(tx) {
+  PS.pos = new Float32Array(PN * 3); PS.col = new Float32Array(PN * 3);
+  for (let i = 0; i < PN; i++) { PS.vel.push(new THREE.Vector3()); PS.base.push(new THREE.Color()); PS.pos[i * 3 + 1] = -99; }
+  PS.geo = new THREE.BufferGeometry();
+  PS.geo.setAttribute('position', new THREE.BufferAttribute(PS.pos, 3));
+  PS.geo.setAttribute('color', new THREE.BufferAttribute(PS.col, 3));
+  const pts = new THREE.Points(PS.geo, new THREE.PointsMaterial({ size: 0.26, map: tx, vertexColors: true, transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true, fog: false }));
+  pts.frustumCulled = false; court.add(pts);
+}
+function spawn(p, v, color, life) {
+  const i = PS.idx++ % PN;
+  PS.pos[i * 3] = p.x; PS.pos[i * 3 + 1] = p.y; PS.pos[i * 3 + 2] = p.z;
+  PS.vel[i].copy(v); PS.base[i].set(color); PS.life[i] = life;
+}
+const FW_COLORS = [0xff3030, 0xffc83d, 0xffffff, 0xff5fb0, 0x3de8e0];
+function fireworks(hi, big) {
+  const bd = CFG.BOARD, corners = [-1, 1].map(sx => mirror(hi, new THREE.Vector3(sx * bd.w / 2, bd.y + bd.h / 2, bd.z), false));
+  // Fuente de chispas desde las esquinas del tablero
+  corners.forEach(c => { for (let i = 0; i < (big ? 70 : 40); i++) spawn(c, new THREE.Vector3((Math.random() - .5) * 1.2, 2 + Math.random() * 2.5, (Math.random() - .5) * 1.2), 0xffd27a, 0.9 + Math.random() * 0.5); });
+  // Cohetes que explotan en colores
+  const n = big ? 4 : 2;
+  for (let k = 0; k < n; k++) {
+    const c = corners[k % 2].clone();
+    PS.rockets.push({ p: c, v: new THREE.Vector3((Math.random() - .5) * 1.5, 5 + Math.random() * 2, (Math.random() - .5) * 1.5), t: 0.45 + Math.random() * 0.35 + k * 0.12, col: FW_COLORS[(Math.random() * FW_COLORS.length) | 0], big });
+  }
+}
+function updateParticles(dt) {
+  if (!PS.geo) return;
+  // cohetes
+  for (let r = PS.rockets.length - 1; r >= 0; r--) {
+    const R = PS.rockets[r];
+    R.v.y -= 6 * dt; R.p.addScaledVector(R.v, dt); R.t -= dt;
+    spawn(R.p, new THREE.Vector3(0, -0.5, 0), 0xffe0a0, 0.25);
+    if (R.t <= 0) {
+      const m = R.big ? 110 : 70;
+      for (let i = 0; i < m; i++) {
+        const d = new THREE.Vector3(Math.random() - .5, Math.random() - .5, Math.random() - .5).normalize().multiplyScalar(2 + Math.random() * 1.6);
+        spawn(R.p, d, R.col, 1.1 + Math.random() * 0.6);
+      }
+      AudioFX.boom(); PS.rockets.splice(r, 1);
+    }
+  }
+  // partículas
+  for (let i = 0; i < PN; i++) {
+    if (PS.life[i] <= 0) { PS.col[i * 3] = PS.col[i * 3 + 1] = PS.col[i * 3 + 2] = 0; PS.pos[i * 3 + 1] = -99; continue; }
+    PS.life[i] -= dt;
+    const v = PS.vel[i]; v.y -= 3.2 * dt; v.multiplyScalar(1 - dt * 0.8);
+    PS.pos[i * 3] += v.x * dt; PS.pos[i * 3 + 1] += v.y * dt; PS.pos[i * 3 + 2] += v.z * dt;
+    const l = Math.max(0, Math.min(1, PS.life[i]));
+    PS.col[i * 3] = PS.base[i].r * l; PS.col[i * 3 + 1] = PS.base[i].g * l; PS.col[i * 3 + 2] = PS.base[i].b * l;
+  }
+  // ¡EN FUEGO!: llamas en el aro
+  if (S.streak >= 3) {
+    const rim = RIMS[aimHoop];
+    for (let k = 0; k < 3; k++) {
+      const a = Math.random() * Math.PI * 2;
+      spawn(new THREE.Vector3(rim.x + Math.cos(a) * CFG.RIM_R, rim.y, rim.z + Math.sin(a) * CFG.RIM_R),
+        new THREE.Vector3(0, 0.8 + Math.random() * 0.8, 0), Math.random() < .5 ? 0xff6a00 : 0xffc23d, 0.5);
+    }
+  }
+  PS.geo.attributes.position.needsUpdate = true; PS.geo.attributes.color.needsUpdate = true;
+}
+
 /* ===================== ESCENA ===================== */
 function init3D() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -503,6 +613,7 @@ function init3D() {
   gr.addColorStop(0, 'rgba(255,255,220,1)'); gr.addColorStop(0.25, 'rgba(255,200,60,.95)'); gr.addColorStop(0.6, 'rgba(255,80,0,.55)'); gr.addColorStop(1, 'rgba(255,0,0,0)');
   fg.fillStyle = gr; fg.fillRect(0, 0, 64, 64);
   const fireTex = new THREE.CanvasTexture(fc);
+  initParticles(fireTex);
   for (let i = 0; i < 48; i++) {
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireTex, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }));
     sp.visible = false; sp.userData.life = 0; court.add(sp); fire.push(sp);
@@ -896,6 +1007,7 @@ function hoopCollide(p, v, r, h, hi) {
       v.x -= 1.6 * vn * ux; v.y -= 1.6 * vn * uy; v.z -= 1.6 * vn * uz; // rebote (restitución 0.6)
       v.multiplyScalar(0.92);                                          // fricción del aro
       if (-vn > 0.4) playSnd(AudioFX.rim);
+      B.rim = true;
     }
   }
 
@@ -903,7 +1015,7 @@ function hoopCollide(p, v, r, h, hi) {
   const bd = CFG.BOARD, frontZ = bd.z + bd.d / 2, backZ = bd.z - bd.d / 2;
   if (Math.abs(p.x - bd.x) < bd.w / 2 + r * 0.5 && Math.abs(p.y - bd.y) < bd.h / 2 + r * 0.5) {
     if (p.z - r < frontZ && B.prev.z - r >= frontZ - 0.02 && v.z < 0) {
-      p.z = frontZ + r; v.z = -v.z * 0.7; v.x *= 0.9; v.y *= 0.9; playSnd(AudioFX.board);
+      p.z = frontZ + r; v.z = -v.z * 0.7; v.x *= 0.9; v.y *= 0.9; playSnd(AudioFX.board); B.board = true;
     } else if (p.z + r > backZ && B.prev.z + r <= backZ + 0.02 && v.z > 0) {
       p.z = backZ - r; v.z = -v.z * 0.7; playSnd(AudioFX.board);
     }
@@ -940,14 +1052,40 @@ function worldCollide(p, v, r) {
 }
 
 function onScore(hi) {
-  const pts = B.startDist > CFG.THREE_PT_DIST ? 3 : 2;
+  // Puntos: 100 por canasta + bonos, multiplicados por la racha (máx x3)
+  S.streak++; S.made++; S.bestStreak = Math.max(S.bestStreak, S.streak);
+  const mult = Math.min(3, S.streak);
+  let pts = 100, notes = [];
+  const swish = !B.rim && !B.board;
+  if (swish) { pts += 50; notes.push('SWISH +50'); S.swishes++; }
+  if (B.board) notes.push('De tablero');
+  if (B.startDist > CFG.THREE_PT_DIST) { pts += 50; notes.push('Larga distancia +50'); }
+  if (B.ritual) { pts += 25; notes.push('Ritual (3 botes) +25'); }
+  pts *= mult;
+  if (mult > 1) notes.push('Racha x' + mult);
   S.score += pts;
-  toast(pts === 3 ? '¡TRIPLE! +3' : '¡CANASTA! +2');
-  AudioFX.swish(); AudioFX.score(false);
+  toast(swish ? '¡SWISH!' : '¡CANASTA!');
+  subMsg('+' + pts + (notes.length ? '\n' + notes.join(' · ') : ''));
+  if (S.streak === 3) { setTimeout(() => toast('🔥 ¡EN FUEGO! 🔥'), 900); AudioFX.horn(); }
+  AudioFX.swish(); AudioFX.score(false); AudioFX.cheer();
+  B.counted = true;
+  fireworks(hi || 0, swish || S.streak >= 3);
   netAnim = 1; S.netIdx = hi || 0; updateHUD();
+}
+// Al terminar un tiro que no entró
+function onMiss() {
+  S.streak = 0;
+  toast(B.rim || B.board ? '¡CASI!' : '¡FALLÓ!');
+  AudioFX.aww(); updateHUD();
+}
+function afterShot() {
+  if (!B.counted) onMiss();
+  B.counted = true;
+  if (S.game === 'clasico' && S.shots >= 10) setTimeout(endGame, 900);
 }
 
 function resetBall() {
+  if (B.state === 'flying') afterShot();
   // Con la mano real, el balón aparece flotando para que lo agarres
   B.state = (HT.on && performance.now() - HT.seen < 4000) ? 'free' : 'held';
   ball.visible = false; heldBall.visible = true; B.freeT = 0;
@@ -971,7 +1109,7 @@ function updateDribble(dt) {
   if (B.pos.y < r) {                                   // toca el piso y sube justo hasta tu mano
     B.pos.y = r;
     B.vel.y = Math.sqrt(2 * CFG.G * Math.max(0.15, tgt.y - r)) * 1.05;
-    B.up = true; AudioFX.bounce(0.9);
+    B.up = true; AudioFX.bounce(0.9); B.bounces = (B.bounces || 0) + 1; updateHUD();
   }
   if (B.up && (B.pos.y >= tgt.y - 0.05 || B.vel.y <= 0)) {   // vuelve a tu mano
     B.up = false; HT.cool = performance.now() + 600; HT.hist.length = 0;   // no lanzar sin querer al recibirlo
@@ -1025,11 +1163,14 @@ function calcVelocity(start, speed, lat, tol) {
 }
 function throwBall(speed, lat, tol) {
   if (B.state !== 'held' && B.state !== 'free') return;
+  if (S.over || (S.game === 'clasico' && S.shots >= 10)) return;
   aimHoop = pickHoop();
   const start = heldStartLocal();
   const r = calcVelocity(start, speed, lat, tol);
   B.pos.copy(start); B.vel.copy(r.v);
   B.state = 'flying'; B.t = 0; B.scored = false; B.endT = 0; B.startDist = r.horiz;
+  B.rim = false; B.board = false; B.ritual = (B.bounces || 0) >= 3; B.bounces = 0; B.counted = false;
+  if (S.game === 'reloj' && !S.clockOn) S.clockOn = true;
   heldBall.visible = false; ball.visible = true; ball.position.copy(start); B.s0 = myHand.scale.x / CFG.SCALE; ball.scale.setScalar(B.s0);
   S.shots++; input.flick = 1;
   AudioFX.whoosh(); updateHUD();
@@ -1275,13 +1416,16 @@ function update(dt) {
     ball.rotation.x -= B.vel.z * dt * 5;
     ball.rotation.z += B.vel.x * dt * 5;
     // Estela de fuego mientras vuela
-    if (B.t < 2.2 && !B.endT) for (let k = 0; k < 2; k++) {
+    if (B.t < 2.2 && !B.endT) for (let k = 0; k < (S.streak >= 3 ? 3 : 1); k++) {
       const f = fire[fireIdx++ % fire.length];
       f.position.copy(B.pos).add(new THREE.Vector3((Math.random() - .5) * .08, (Math.random() - .5) * .08, (Math.random() - .5) * .08));
       f.userData.life = 1; f.visible = true;
     }
   }
 
+  updateParticles(dt);
+  updateMeter();
+  updateClock(dt);
   fire.forEach(f => {
     if (!f.visible) return;
     f.userData.life -= dt * 2.6;
@@ -1356,7 +1500,7 @@ function drawHandOcclusion() {
   const hs = HT.hist.length > 1 ? HT.hist[HT.hist.length - 1] : null, hs0 = HT.hist[0];
   const spd = hs && hs.t > hs0.t ? Math.hypot(hs.x - hs0.x, hs.y - hs0.y) / H / ((hs.t - hs0.t) / 1000) : 0;
   c.globalAlpha = THREE.MathUtils.clamp(1.6 - spd, 0, 1);
-  if (c.globalAlpha <= 0.02) { c.globalAlpha = 1; return; }
+  if (c.globalAlpha <= 0.02) { c.globalAlpha = 1; drawSkeleton(c); return; }
   c.drawImage(v, (W - vw * k) / 2, (H - vh * k) / 2, vw * k, vh * k);
   c.globalAlpha = 1;
   c.globalCompositeOperation = 'destination-in'; c.drawImage(OCC.mask, 0, 0);
@@ -1368,6 +1512,18 @@ function drawHandOcclusion() {
     c.beginPath(); c.arc((wp.x + 1) / 2 * W, (1 - wp.y) / 2 * H, r * 1.02, 0, Math.PI * 2); c.fill();
   }
   c.globalCompositeOperation = 'source-over';
+  drawSkeleton(c);
+}
+// Articulaciones brillantes: turquesa = abierta, rosado = cerrada, dorado = sosteniendo el balón
+function drawSkeleton(c) {
+  const P = HT.pts; if (!P) return;
+  const col = B.state === 'held' ? '#ffd84a' : HT.fist ? '#ff5fb0' : '#3de8e0';
+  c.save();
+  c.strokeStyle = col; c.globalAlpha = 0.55; c.lineWidth = 2; c.shadowColor = col; c.shadowBlur = 8;
+  FINGERS.forEach(f => { c.beginPath(); f.forEach((i, n) => n ? c.lineTo(P[i].x, P[i].y) : c.moveTo(P[i].x, P[i].y)); c.stroke(); });
+  c.globalAlpha = 0.9; c.fillStyle = col;
+  P.forEach((q, i) => { c.beginPath(); c.arc(q.x, q.y, [4, 8, 12, 16, 20].includes(i) ? 4.5 : 3, 0, Math.PI * 2); c.fill(); });
+  c.restore();
 }
 
 function startGame() {
@@ -1377,7 +1533,8 @@ function startGame() {
   $('hud').classList.remove('hidden'); $('hint').classList.remove('hidden'); $('touch').classList.remove('hidden');
   $('hint').dataset.base = $('hint').innerHTML;
   if (S.mode === 'online') $('rvBox').classList.remove('hidden');
-  else setNet('Modo solo');
+  else setNet({ practica: 'Práctica', clasico: 'Clásico · 10 tiros', reloj: 'Contrarreloj · 60 s' }[S.game]);
+  if (S.mode === 'online') S.game = 'practica';
   init3D(); bindTouch(); updateHUD();
   if (S.mode === 'online') placeAtSpot(S.isHost ? 5 : 6);   // cada jugador en su lado de la cancha
   lastTime = performance.now();
@@ -1389,10 +1546,63 @@ function startGame() {
   if (S.xrSupported) startXR().catch(fallback); else fallback();
 }
 
+/* ===================== MEDIDOR DE POTENCIA ===================== */
+function updateMeter() {
+  let ratio = null;
+  const sw = currentSwipe();
+  if (sw) ratio = sw.speed / CFG.IDEAL_SWIPE;
+  else if (HT.palm && B.state === 'held' && HT.hist.length > 1) {
+    const a = HT.hist[0], b = HT.hist[HT.hist.length - 1], dt = (b.t - a.t) / 1000;
+    const vy = dt > 0 ? (a.y - b.y) / window.innerHeight / dt : 0;
+    if (vy > 0.3) ratio = vy * CFG.HAND_POWER / CFG.IDEAL_SWIPE;
+  }
+  const m = $('meter');
+  if (ratio == null) { m.classList.remove('show'); return; }
+  m.classList.add('show');
+  const tol = sw ? CFG.SWIPE_TOLERANCE : CFG.HAND_TOLERANCE;
+  // abajo = corto, medio = perfecto, arriba = largo
+  const t = THREE.MathUtils.clamp(ratio / 2, 0, 1);
+  $('meterBar').style.top = ((1 - t) * 195) + 'px';
+  $('meterTxt').textContent = ratio < 1 - tol ? 'CORTO' : ratio > 1 + tol ? 'LARGO' : '¡PERFECTO!';
+}
+
+/* ===================== MODOS DE JUEGO ===================== */
+function updateClock(dt) {
+  if (S.game !== 'reloj' || S.over || !S.clockOn) return;
+  S.timeLeft -= dt;
+  if (S.timeLeft <= 0) { S.timeLeft = 0; S.over = true; setTimeout(endGame, B.state === 'flying' ? 2500 : 300); }
+  updateHUD();
+}
+function endGame() {
+  if ($('results').classList.contains('hidden') === false) return;
+  S.over = true;
+  if (AudioFX.ctx) { const t = AudioFX.now(); AudioFX.tone('square', 180, t, 0.9, 0.3); AudioFX.tone('square', 120, t, 0.9, 0.25); }
+  const pct = S.shots ? Math.round(S.made / S.shots * 100) : 0;
+  const key = 'arbasket-record-' + S.game;
+  let rec = 0; try { rec = +localStorage.getItem(key) || 0; } catch (_) {}
+  const nuevo = S.score > rec;
+  if (nuevo) try { localStorage.setItem(key, S.score); } catch (_) {}
+  $('resPts').textContent = S.score + ' pts';
+  $('resStats').innerHTML = `🏀 Canastas: ${S.made} de ${S.shots} (${pct}%)<br>🔥 Mejor racha: ${S.bestStreak}<br>💧 Swishes: ${S.swishes}`;
+  $('resRecord').textContent = nuevo ? '🏆 ¡NUEVO RÉCORD!' : 'Récord: ' + rec + ' pts';
+  $('results').classList.remove('hidden');
+}
+function restartGame() {
+  B.counted = true;
+  Object.assign(S, { score: 0, shots: 0, made: 0, streak: 0, bestStreak: 0, swishes: 0, timeLeft: 60, over: false, clockOn: false });
+  B.bounces = 0; resetBall(); B.state = 'held';
+  $('results').classList.add('hidden'); updateHUD();
+}
+
 /* ===================== UI ===================== */
 function updateHUD() {
   $('myScore').textContent = S.score;
-  $('shots').textContent = 'Tiros: ' + S.shots;
+  $('shots').textContent = S.game === 'clasico' ? 'Tiro ' + Math.min(S.shots, 10) + '/10' : S.game === 'reloj' ? '⏱ ' + Math.ceil(S.timeLeft) + ' s' : 'Tiros: ' + S.shots;
+  const ex = [];
+  if (S.streak >= 3) ex.push('<span id="fireTag">🔥 EN FUEGO</span>');
+  else if (S.streak > 0) ex.push('Racha x' + Math.min(3, S.streak + 1));
+  if (B.bounces) ex.push('Botes: ' + B.bounces + (B.bounces >= 3 ? ' ✨' : ''));
+  if ($('extra')) $('extra').innerHTML = ex.join('<br>');
   $('rvScore').textContent = S.rivalScore;
   $('rvShots').textContent = 'Tiros: ' + S.rivalShots;
 }
@@ -1402,6 +1612,8 @@ function showMsg(t) { const m = $('msg'); if (m.textContent !== t) m.textContent
 function hideMsg() { $('msg').classList.add('hidden'); }
 function flashMsg(t, ms) { showMsg(t); S.msgUntil = performance.now() + (ms || 1500); }
 let toastTimer = null;
+let subTimer = null;
+function subMsg(t) { const el = $('sub'); el.textContent = t; el.classList.add('show'); clearTimeout(subTimer); subTimer = setTimeout(() => el.classList.remove('show'), 1800); }
 function toast(t, rival) {
   const el = $('toast');
   el.textContent = t;
@@ -1435,6 +1647,15 @@ $('btnExit').addEventListener('click', leave);
 $('btnMusic').addEventListener('click', () => { AudioFX.init(); $('btnMusic').style.opacity = AudioFX.toggle() ? 1 : 0.4; });
 $('btnSensors').addEventListener('click', () => { requestMotion(); $('btnSensors').classList.add('hidden'); setTimeout(() => { if (!Gyro.has) $('btnSensors').classList.remove('hidden'); }, 2500); });
 $('btnCenter').addEventListener('click', () => { requestMotion(); centerCourt(); flashMsg('Cancha ubicada frente a ti ✔', 1200); });
+document.querySelectorAll('#modes .chip').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('#modes .chip').forEach(x => x.classList.remove('on')); b.classList.add('on'); S.game = b.dataset.m;
+}));
+$('btnAgain').addEventListener('click', restartGame);
+$('btnMenu').addEventListener('click', leave);
+document.addEventListener('visibilitychange', () => {   // pausa al cambiar de pestaña
+  if (!AudioFX.ctx) return;
+  if (document.hidden) AudioFX.ctx.suspend(); else AudioFX.ctx.resume();
+});
 window.addEventListener('beforeunload', () => { if (S.peer) { try { S.peer.destroy(); } catch (_) {} } });
 
 // Si llega con enlace ?sala=CODIGO, se rellena el campo automáticamente
