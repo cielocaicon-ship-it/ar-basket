@@ -96,7 +96,7 @@ input{flex:1;min-width:0;padding:14px;border-radius:12px;border:2px solid rgba(2
 </div>
 <div id="msg" class="hidden"></div>
 <div id="toast"></div>
-<div id="hint" class="hidden">✋ Agarra · bájala = rebotar · súbela = lanzar <small style="opacity:.6">· v15</small></div>
+<div id="hint" class="hidden">✊ Cierra la mano = agarrar · bájala = rebotar · súbela = lanzar <small style="opacity:.6">· v16</small></div>
 <canvas id="occ"></canvas>
 <div id="touch" class="hidden"></div>
 <div id="steps" class="hidden">📡 Preparando…</div>
@@ -685,7 +685,10 @@ function handStep(now) {
   HT.size = Math.hypot(w0.x - m9.x, w0.y - m9.y);
   HT.palm = { x, y }; HT.seen = now;
   HT.pts = L.map((_, i) => sp(i));
-  setTrack(B.state === 'held' ? '✋ Sube la mano rápido = lanzar · bájala = rebotar' : B.state === 'free' ? '✋ ¡Agarra el balón!' : B.state === 'dribble' ? '🏀 ¡Rebotando!' : '🏀 ¡Lanzado!');
+  // ¿Mano cerrada? (puntas de los dedos cerca de la muñeca = agarrar)
+  const pd = (i, j) => Math.hypot(HT.pts[i].x - HT.pts[j].x, HT.pts[i].y - HT.pts[j].y);
+  HT.fist = ([8, 12, 16, 20].reduce((a, i) => a + pd(i, 0), 0) / 4) < pd(0, 9) * 1.25;
+  setTrack(B.state === 'held' ? '✋ Sube la mano rápido = lanzar · bájala = rebotar' : B.state === 'free' ? '✊ Cierra la mano o acércala para agarrar el balón' : B.state === 'dribble' ? '🏀 ¡Rebotando!' : '🏀 ¡Lanzado!');
   // Gesto de lanzamiento: la mano sube rápido
   HT.hist.push({ x, y, t: now });
   while (HT.hist.length > 2 && now - HT.hist[0].t > 180) HT.hist.shift();
@@ -1231,8 +1234,9 @@ function update(dt) {
     myHand.position.set(fx * hh * camera.aspect - bp.x * k, fy * hh - bp.y * k, -d - bp.z * k);
     if (realHand) {
       const bx = window.innerWidth / 2, byy = H2 * (1 - fy);
-      if (Math.hypot(HT.palm.x - bx, HT.palm.y - byy) < window.innerWidth * 0.22) {
-        B.state = 'held';
+      const near = Math.hypot(HT.palm.x - bx, HT.palm.y - byy);
+      if (near < window.innerWidth * 0.3 || HT.fist) {
+        B.state = 'held'; HT.cool = performance.now() + 500; HT.hist.length = 0;
         if (AudioFX.ctx) { AudioFX.tone('triangle', 520, AudioFX.now(), 0.12, 0.3); AudioFX.bounce(0.4); }
       }
     } else if (B.freeT > 6) B.state = 'held';
@@ -1244,7 +1248,7 @@ function update(dt) {
     const target = THREE.MathUtils.clamp(rPx / H2 * hh / (CFG.BALL_R * CFG.SCALE), 0.12, 1.4);
     myHand.scale.setScalar(myHand.scale.x + (target - myHand.scale.x) * 0.5);
     const k = myHand.scale.x, bp = heldBall.position;
-    const by = ny + rPx / H2 * 1.1;                       // sobre la punta de los dedos
+    const by = ny + rPx / H2 * 0.35;                      // en el centro de la palma
     myHand.rotation.set(0, 0, 0);
     myHand.position.set(nx * hh * camera.aspect - bp.x * k, by * hh - bp.y * k, -d - bp.z * k);
   } else {
@@ -1335,20 +1339,26 @@ function drawHandOcclusion() {
   const v = $('cam');
   if (!HT.pts || !HT.palm || performance.now() - HT.seen > 350 || v.readyState < 2 || S.track === 'xr') return;
   // 1) Silueta de la mano (dedos gruesos + palma) con borde suave
-  const m = OCC.mctx, P = HT.pts, wdt = Math.max(10, HT.size * 0.32);
+  const m = OCC.mctx, P = HT.pts, wdt = Math.max(8, HT.size * 0.22);
   m.clearRect(0, 0, W, H);
   m.save();
-  try { m.filter = 'blur(' + Math.round(wdt * 0.18) + 'px)'; } catch (_) {}
+  try { m.filter = 'blur(2px)'; } catch (_) {}
   m.fillStyle = m.strokeStyle = '#fff'; m.lineCap = m.lineJoin = 'round'; m.lineWidth = wdt;
   FINGERS.forEach(f => { m.beginPath(); f.forEach((i, n) => n ? m.lineTo(P[i].x, P[i].y) : m.moveTo(P[i].x, P[i].y)); m.stroke(); });
   m.beginPath(); [0, 1, 2, 5, 9, 13, 17].forEach((i, n) => n ? m.lineTo(P[i].x, P[i].y) : m.moveTo(P[i].x, P[i].y)); m.closePath(); m.fill(); m.stroke();
   // muñeca hacia el borde de la pantalla
-  const wx = P[0].x + (P[0].x - P[9].x) * 1.6, wy = P[0].y + (P[0].y - P[9].y) * 1.6;
-  m.lineWidth = wdt * 2.2; m.beginPath(); m.moveTo(P[0].x, P[0].y); m.lineTo(wx, wy); m.stroke();
+  const wx = P[0].x + (P[0].x - P[9].x) * 0.9, wy = P[0].y + (P[0].y - P[9].y) * 0.9;
+  m.lineWidth = wdt * 1.6; m.beginPath(); m.moveTo(P[0].x, P[0].y); m.lineTo(wx, wy); m.stroke();
   m.restore();
   // 2) Video de la cámara solo donde está tu mano
   const vw = v.videoWidth, vh = v.videoHeight, k = Math.max(W / vw, H / vh);
+  // Si la mano se mueve rápido, el recorte se desvanece (así no se ve el fondo "roto")
+  const hs = HT.hist.length > 1 ? HT.hist[HT.hist.length - 1] : null, hs0 = HT.hist[0];
+  const spd = hs && hs.t > hs0.t ? Math.hypot(hs.x - hs0.x, hs.y - hs0.y) / H / ((hs.t - hs0.t) / 1000) : 0;
+  c.globalAlpha = THREE.MathUtils.clamp(1.6 - spd, 0, 1);
+  if (c.globalAlpha <= 0.02) { c.globalAlpha = 1; return; }
   c.drawImage(v, (W - vw * k) / 2, (H - vh * k) / 2, vw * k, vh * k);
+  c.globalAlpha = 1;
   c.globalCompositeOperation = 'destination-in'; c.drawImage(OCC.mask, 0, 0);
   // 3) El balón que sostienes queda delante de tu mano
   if (heldBall.visible && (B.state === 'held' || B.state === 'free')) {
